@@ -333,7 +333,7 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
             zoom = 3
 
     fig = plt.figure(figsize=(10, 5))
-    tiler = cimgt.Stamen('terrain-background')
+    tiler = cimgt.OSM()
     ax = plt.axes(projection=tiler.crs)
     ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
     ax.add_image(tiler, zoom)
