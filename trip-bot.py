@@ -68,10 +68,27 @@ def init_db():
     """Initialize the SQLite database with optimized settings."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    
+    # Создаем таблицу, если её нет
     c.execute('''CREATE TABLE IF NOT EXISTS visited_places
                  (user_id INTEGER, place_name TEXT, latitude REAL, longitude REAL,
                   status TEXT DEFAULT 'visited',
                   PRIMARY KEY (user_id, place_name))''')
+    
+    # Проверяем, есть ли колонка status
+    c.execute("PRAGMA table_info(visited_places)")
+    columns = [column[1] for column in c.fetchall()]
+    
+    # Если колонки status нет, добавляем её
+    if 'status' not in columns:
+        try:
+            # Добавляем колонку status со значением по умолчанию 'visited'
+            c.execute('ALTER TABLE visited_places ADD COLUMN status TEXT DEFAULT "visited"')
+            conn.commit()
+            logger.info("Successfully added status column to visited_places table")
+        except sqlite3.OperationalError as e:
+            logger.error(f"Error adding status column: {e}")
+    
     c.execute('CREATE INDEX IF NOT EXISTS idx_user_id ON visited_places(user_id)')
     # Таблица для хранения языка пользователя
     c.execute('''CREATE TABLE IF NOT EXISTS user_settings
