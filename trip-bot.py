@@ -39,6 +39,15 @@ MAP_SETTINGS_STATE = {}
 
 BOT_VERSION = '0.6'
 
+LANGUAGES = [
+    ('en', 'English'), ('zh', '中文'), ('hi', 'हिन्दी'), ('es', 'Español'), ('fr', 'Français'),
+    ('ar', 'العربية'), ('ru', 'Русский'), ('de', 'Deutsch'), ('pt', 'Português'), ('it', 'Italiano'),
+    ('tr', 'Türkçe'), ('pl', 'Polski'), ('uk', 'Українська'), ('nl', 'Nederlands'), ('sv', 'Svenska'),
+    ('fi', 'Suomi'), ('el', 'Ελληνικά'), ('cs', 'Čeština'), ('ro', 'Română'), ('hu', 'Magyar'),
+    ('bg', 'Български'), ('da', 'Dansk'), ('no', 'Norsk'), ('sk', 'Slovenčina'), ('sr', 'Српски'),
+    ('hr', 'Hrvatski'), ('sl', 'Slovenščina')
+]
+
 def init_db():
     """Initialize the SQLite database with optimized settings."""
     conn = sqlite3.connect(DB_PATH)
@@ -47,6 +56,9 @@ def init_db():
                  (user_id INTEGER, place_name TEXT, latitude REAL, longitude REAL,
                   PRIMARY KEY (user_id, place_name))''')
     c.execute('CREATE INDEX IF NOT EXISTS idx_user_id ON visited_places(user_id)')
+    # Таблица для хранения языка пользователя
+    c.execute('''CREATE TABLE IF NOT EXISTS user_settings
+                 (user_id INTEGER PRIMARY KEY, lang TEXT)''')
     conn.commit()
     conn.close()
 
@@ -291,6 +303,8 @@ async def generate_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    lang = get_user_lang(user_id)
+    tile_url = get_tile_url(lang)
     opts = user_temp_options.get(user_id, {'labels': True, 'scale': 'auto', 'continent': None})
 
     conn = sqlite3.connect(DB_PATH)
@@ -304,7 +318,7 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     filtered_places = filter_places_by_scale(places, opts)
-    m = StaticMap(800, 400, url_template='http://a.tile.openstreetmap.org/{z}/{x}/{y}.png')
+    m = StaticMap(800, 400, url_template=tile_url)
     marker_coords = []
     for place_name, lat, lon in filtered_places:
         m.add_marker(CircleMarker((lon, lat), 'red', 12))
@@ -514,6 +528,53 @@ async def set_bot_commands(application):
     ]
     await application.bot.set_my_commands(commands)
 
+def get_user_lang(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT lang FROM user_settings WHERE user_id = ?', (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else 'en'
+
+def set_user_lang(user_id, lang):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('INSERT OR REPLACE INTO user_settings (user_id, lang) VALUES (?, ?)', (user_id, lang))
+    conn.commit()
+    conn.close()
+
+async def lang_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = []
+    row = []
+    for i, (code, name) in enumerate(LANGUAGES, 1):
+        row.append(InlineKeyboardButton(name, callback_data=f"lang_{code}"))
+        if i % 3 == 0:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+    await update.message.reply_text(
+        "Choose your preferred map language:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def lang_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if data.startswith('lang_'):
+        lang = data.split('_', 1)[1]
+        user_id = query.from_user.id
+        set_user_lang(user_id, lang)
+        await query.edit_message_text(f"Language set to: {dict(LANGUAGES)[lang]}")
+
+def get_tile_url(lang):
+    # Можно добавить больше серверов для других языков
+    if lang == 'ru':
+        return 'https://tile.openstreetmap.ru/{z}/{x}/{y}.png'
+    # Можно добавить другие тайлы для zh, de, fr и т.д. если найдёте подходящие
+    return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+
 def main():
     init_db()
     application = Application.builder().token(BOT_TOKEN).post_init(set_bot_commands).build()
@@ -524,6 +585,8 @@ def main():
     application.add_handler(CommandHandler("remove", remove_place))
     application.add_handler(CallbackQueryHandler(map_settings_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
+    application.add_handler(CommandHandler("lang", lang_command))
+    application.add_handler(CallbackQueryHandler(lang_callback, pattern=r'^lang_'))
     application.run_polling()
 
 if __name__ == '__main__':
