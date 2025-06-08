@@ -99,12 +99,25 @@ async def add_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text('Could not find this city. Please try again with a different name.')
             return
         if len(locations) > 1:
-            # Уточнение города
+            # Уточнение города (только уникальные по названию+региону+стране)
+            def get_display_key(loc):
+                address = loc.raw.get('address', {})
+                city = address.get('city') or address.get('town') or address.get('village') or address.get('hamlet') or ''
+                state = address.get('state') or ''
+                country = address.get('country') or ''
+                return (city.strip().lower(), state.strip().lower(), country.strip().lower())
+            unique_locs = []
+            seen_keys = set()
+            for loc in locations:
+                key = get_display_key(loc)
+                if key not in seen_keys:
+                    unique_locs.append(loc)
+                    seen_keys.add(key)
             options = []
-            for idx, loc in enumerate(locations):
+            for idx, loc in enumerate(unique_locs):
                 address = loc.raw.get('display_name', loc.address)
                 options.append(f"{idx+1}. {address}")
-            context.user_data['city_candidates'] = locations
+            context.user_data['city_candidates'] = unique_locs
             await update.message.reply_text(
                 'Several cities found with this name. Please reply with the number of the correct one:\n' + '\n'.join(options)
             )
@@ -192,8 +205,8 @@ async def ask_map_settings(update: Update, context: ContextTypes.DEFAULT_TYPE, i
     )
     MAP_SETTINGS_STATE[user_id] = {'step': 'scale', 'is_image': is_image}
 
-async def map_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await ask_map_settings(update, context, is_image=False)
+#async def map_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#    await ask_map_settings(update, context, is_image=False)
 
 
 async def mapimg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -350,7 +363,7 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     plt.tight_layout()
     image_file = TEMP_DIR / f'user_map_{user_id}.png'
-    plt.savefig(image_file, bbox_inches='tight', dpi=300)  # увеличенный dpi!
+    plt.savefig(image_file, bbox_inches='tight', dpi=500)  # увеличенный dpi!
     plt.close(fig)
     with open(image_file, 'rb') as f:
         await update.message.reply_photo(photo=f)
