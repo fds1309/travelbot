@@ -40,7 +40,7 @@ user_temp_options = {}
 # Состояния для выбора
 MAP_SETTINGS_STATE = {}
 
-BOT_VERSION = '0.6'
+BOT_VERSION = '0.7'
 
 # BBOX для мира и континентов (min_lon, min_lat, max_lon, max_lat)
 CONTINENT_BBOX = {
