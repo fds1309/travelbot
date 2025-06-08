@@ -319,8 +319,7 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
             font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 14)
         except Exception:
             font = ImageFont.load_default()
-        for place_name, lon, lat in marker_coords:
-            x, y = m.coordinate_to_pixel(lon, lat)
+        for (marker, (x, y)), (place_name, lon, lat) in zip(m._marker_positions, marker_coords):
             draw.text((x + 10, y - 10), place_name, font=font, fill='black')
 
     image_file = TEMP_DIR / f'user_map_{user_id}.png'
