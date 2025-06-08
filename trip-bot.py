@@ -310,7 +310,12 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     ax.add_image(tiler, zoom)
 
     # Рисуем маркеры
-    for place_name, lat, lon in places:
+    if scale == 'continent' and continent:
+        filtered_places = [p for p in places if is_in_continent(p[1], p[2], continent)]
+    else:
+        filtered_places = places
+
+    for place_name, lat, lon in filtered_places:
         ax.plot(lon, lat, marker='o', color='red', markersize=8, transform=ccrs.PlateCarree())
 
     plt.tight_layout()
@@ -450,6 +455,21 @@ def make_bbox_square(min_lon, min_lat, max_lon, max_lat):
         center_lon + half,
         center_lat + half
     )
+
+def is_in_continent(lat, lon, continent):
+    if continent == 'Europe':
+        return 35 <= lat <= 70 and -10 <= lon <= 40
+    if continent == 'Asia':
+        return 5 <= lat <= 80 and 40 <= lon <= 180
+    if continent == 'Africa':
+        return -35 <= lat <= 35 and -20 <= lon <= 55
+    if continent == 'North America':
+        return 10 <= lat <= 80 and -170 <= lon <= -50
+    if continent == 'South America':
+        return -60 <= lat <= 15 and -90 <= lon <= -30
+    if continent == 'Australia':
+        return -50 <= lat <= -10 and 110 <= lon <= 180
+    return False
 
 async def set_bot_commands(application):
     commands = [
