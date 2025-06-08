@@ -613,12 +613,14 @@ def make_bbox_square(min_lon, min_lat, max_lon, max_lat):
     center_lat = (min_lat + max_lat) / 2
     size = max(max_lon - min_lon, max_lat - min_lat)
     half = size / 2
-
+    lat_multiplier = 1
+    if abs(max_lat) >80:
+        lat_multiplier = 0.9
     return (
         center_lon - half,
-        center_lat - half + 10,
+        (center_lat - half) * lat_multiplier,
         center_lon + half,
-        center_lat + half - 10
+        (center_lat + half) * lat_multiplier
     )
 
 def is_in_continent(lat, lon, continent):
