@@ -23,8 +23,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Constants
-BOT_TOKEN = 'YOUR_BOT_TOKEN'
+# Read BOT_TOKEN from file
+with open(os.path.join(os.path.dirname(__file__), 'bot_token.txt'), 'r') as f:
+    BOT_TOKEN = f.read().strip()
 DB_PATH = 'travel_data.db'
 TEMP_DIR = Path('temp')
 TEMP_DIR.mkdir(exist_ok=True)
