@@ -227,12 +227,15 @@ async def send_map_with_options(query, context, user_id, is_image):
     class DummyMessage:
         def __init__(self, chat_id):
             self.chat_id = chat_id
-        async def reply_document(self, *args, **kwargs):
-            await context.bot.send_document(chat_id=self.chat_id, *args, **kwargs)
-        async def reply_photo(self, *args, **kwargs):
-            await context.bot.send_photo(chat_id=self.chat_id, *args, **kwargs)
-        async def reply_text(self, *args, **kwargs):
-            await context.bot.send_message(chat_id=self.chat_id, *args, **kwargs)
+        async def reply_document(self, **kwargs):
+            kwargs.setdefault('chat_id', self.chat_id)
+            await context.bot.send_document(**kwargs)
+        async def reply_photo(self, **kwargs):
+            kwargs.setdefault('chat_id', self.chat_id)
+            await context.bot.send_photo(**kwargs)
+        async def reply_text(self, **kwargs):
+            kwargs.setdefault('chat_id', self.chat_id)
+            await context.bot.send_message(**kwargs)
     dummy_update = type('DummyUpdate', (), {'message': DummyMessage(query.message.chat_id), 'effective_user': type('User', (), {'id': user_id})})()
     if is_image:
         await mapimg_command(dummy_update, context)
