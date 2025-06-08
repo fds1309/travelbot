@@ -43,6 +43,17 @@ LANGUAGES = [
     ('en', 'English'), ('fr', 'Français'), ('ru', 'Русский'), ('de', 'Deutsch')
 ]
 
+# Функция для получения центра и bbox для континентов и мира
+CONTINENT_BBOX = {
+    'Europe':    {'center': (15, 54),  'zoom': 3, 'bbox': (-10, 35, 40, 70)},
+    'Asia':      {'center': (100, 34), 'zoom': 2, 'bbox': (40, 5, 180, 80)},
+    'Africa':    {'center': (20, 0),   'zoom': 2, 'bbox': (-20, -35, 55, 35)},
+    'North America': {'center': (-105, 54), 'zoom': 2, 'bbox': (-170, 10, -50, 80)},
+    'South America': {'center': (-60, -15), 'zoom': 2, 'bbox': (-90, -60, -30, 15)},
+    'Australia': {'center': (135, -25), 'zoom': 3, 'bbox': (110, -50, 180, -10)},
+    'World':     {'center': (0, 0),    'zoom': 1, 'bbox': (-180, -85, 180, 85)}
+}
+
 def init_db():
     """Initialize the SQLite database with optimized settings."""
     conn = sqlite3.connect(DB_PATH)
@@ -170,17 +181,18 @@ async def handle_city_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def ask_map_settings(update: Update, context: ContextTypes.DEFAULT_TYPE, is_image=False):
     user_id = update.effective_user.id
     # Сбросить временные настройки
-    user_temp_options[user_id] = {'labels': True, 'scale': 'auto', 'continent': None}
+    user_temp_options[user_id] = {'scale': 'auto', 'continent': None}
     # Первый шаг — подписи
     keyboard = [
-        [InlineKeyboardButton("Show labels", callback_data=f"labels_on|{is_image}")],
-        [InlineKeyboardButton("Hide labels", callback_data=f"labels_off|{is_image}")]
+        [InlineKeyboardButton("Auto", callback_data=f"scale_auto|{is_image}")],
+        [InlineKeyboardButton("World", callback_data=f"scale_world|{is_image}")],
+        [InlineKeyboardButton("Continent", callback_data=f"scale_continent|{is_image}")]
     ]
     await update.message.reply_text(
-        "Choose if you want to show city labels on the map:",
+        "Choose map scale:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
-    MAP_SETTINGS_STATE[user_id] = {'step': 'labels', 'is_image': is_image}
+    MAP_SETTINGS_STATE[user_id] = {'step': 'scale', 'is_image': is_image}
 
 async def map_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await ask_map_settings(update, context, is_image=False)
@@ -196,24 +208,6 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
     state = MAP_SETTINGS_STATE.get(user_id, {})
     data = query.data
     # Обработка выбора подписи
-    if state.get('step') == 'labels':
-        if data.startswith('labels_on'):
-            user_temp_options[user_id]['labels'] = True
-        elif data.startswith('labels_off'):
-            user_temp_options[user_id]['labels'] = False
-        # Следующий шаг — масштаб
-        keyboard = [
-            [InlineKeyboardButton("Auto", callback_data=f"scale_auto|{state.get('is_image', False)}")],
-            [InlineKeyboardButton("World", callback_data=f"scale_world|{state.get('is_image', False)}")],
-            [InlineKeyboardButton("Continent", callback_data=f"scale_continent|{state.get('is_image', False)}")]
-        ]
-        await query.edit_message_text(
-            "Choose map scale:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        MAP_SETTINGS_STATE[user_id]['step'] = 'scale'
-        return
-    # Обработка выбора масштаба
     if state.get('step') == 'scale':
         if data.startswith('scale_auto'):
             user_temp_options[user_id]['scale'] = 'auto'
@@ -249,9 +243,16 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
             MAP_SETTINGS_STATE.pop(user_id, None)
             return
 
+def get_map_params(scale, continent):
+    if scale == 'world':
+        return CONTINENT_BBOX['World']
+    if scale == 'continent' and continent in CONTINENT_BBOX:
+        return CONTINENT_BBOX[continent]
+    return None
+
 async def generate_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    opts = user_temp_options.get(user_id, {'labels': True, 'scale': 'auto', 'continent': None})
+    opts = user_temp_options.get(user_id, {'scale': 'auto', 'continent': None})
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -264,44 +265,34 @@ async def generate_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     filtered_places = filter_places_by_scale(places, opts)
-    map_location, map_zoom = get_map_center_zoom(filtered_places, opts)
+    scale = opts.get('scale', 'auto')
+    continent = opts.get('continent')
 
-    m = folium.Map(
-        location=map_location,
-        zoom_start=map_zoom,
-        prefer_canvas=True,
-        tiles='CartoDB positron',
-        control_scale=False,
-        zoom_control=False
-    )
+    # Определяем параметры карты
+    map_params = get_map_params(scale, continent)
+    if map_params:
+        # Фиксированный bbox для мира/континента
+        m = StaticMap(800, 400, url_template='https://tile.openstreetmap.org/{z}/{x}/{y}.png', 
+                      center=map_params['center'], 
+                      zoom=map_params['zoom'])
+    else:
+        # Автоцентрирование по точкам
+        m = StaticMap(800, 400, url_template='https://tile.openstreetmap.org/{z}/{x}/{y}.png')
 
     for place_name, lat, lon in filtered_places:
-        folium.Marker(
-            location=[lat, lon],
-            popup=place_name if opts.get('labels', True) else None,
-            tooltip=place_name if opts.get('labels', True) else None,
-            icon=folium.Icon(color='red', icon='info-sign')
-        ).add_to(m)
-
-    m.get_root().html.add_child(folium.Element("""<style>.leaflet-control-attribution {display: none !important;}</style>"""))
-
-    map_file = TEMP_DIR / f'user_map_{user_id}.html'
-    m.save(str(map_file))
-
-    try:
-        with open(map_file, 'rb') as f:
-            await update.message.reply_document(
-                document=f,
-                filename=f'travel_map_{user_id}.html'
-            )
-    finally:
-        map_file.unlink(missing_ok=True)
+        m.add_marker(CircleMarker((lon, lat), 'red', 12))
+    image = m.render()
+    image_file = TEMP_DIR / f'user_map_{user_id}.png'
+    image.save(image_file)
+    with open(image_file, 'rb') as f:
+        await update.message.reply_photo(photo=f)
+    image_file.unlink(missing_ok=True)
 
 async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     lang = get_user_lang(user_id)
     tile_url = get_tile_url(lang)
-    opts = user_temp_options.get(user_id, {'labels': True, 'scale': 'auto', 'continent': None})
+    opts = user_temp_options.get(user_id, {'scale': 'auto', 'continent': None})
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -314,30 +305,23 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     filtered_places = filter_places_by_scale(places, opts)
-    m = StaticMap(800, 400, url_template=tile_url)
-    marker_coords = []
+    scale = opts.get('scale', 'auto')
+    continent = opts.get('continent')
+
+    # Определяем параметры карты
+    map_params = get_map_params(scale, continent)
+    if map_params:
+        # Фиксированный bbox для мира/континента
+        m = StaticMap(800, 400, url_template=tile_url, 
+                      center=map_params['center'], 
+                      zoom=map_params['zoom'])
+    else:
+        # Автоцентрирование по точкам
+        m = StaticMap(800, 400, url_template=tile_url)
+
     for place_name, lat, lon in filtered_places:
         m.add_marker(CircleMarker((lon, lat), 'red', 12))
-        marker_coords.append((place_name, lon, lat))
     image = m.render()
-
-    # --- Подписи через Pillow ---
-    if opts.get('labels', True):
-        draw = ImageDraw.Draw(image)
-        try:
-            font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 14)
-        except Exception:
-            font = ImageFont.load_default()
-        # bbox карты
-        bbox = m.calculate_bounding_box()
-        min_lon, min_lat, max_lon, max_lat = bbox
-        width, height = image.size
-        for place_name, lon, lat in marker_coords:
-            # Пропорционально переводим координаты в пиксели
-            x = int((lon - min_lon) / (max_lon - min_lon) * width)
-            y = int((max_lat - lat) / (max_lat - min_lat) * height)
-            draw.text((x + 10, y - 10), place_name, font=font, fill='black')
-
     image_file = TEMP_DIR / f'user_map_{user_id}.png'
     image.save(image_file)
     with open(image_file, 'rb') as f:
