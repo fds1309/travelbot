@@ -60,7 +60,7 @@ CONTINENT_BBOX = {
     'North America': (-170, 10, -50, 80),
     'South America': (-90, -60, -30, 15),
     'Australia':     (110, -50, 180, -10),
-    'World':         (-180, -55, 180, 75)
+    'World':         (-200, -55, 160, 75)
 }
 
 def init_db():
@@ -247,7 +247,7 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
             return
     if state.get('step') == 'continent':
         if data.startswith('continent_'):
-            cont = data.split('_', 1)[1]
+            cont = data.split('_', 1)[1].strip().title()
             user_temp_options[user_id]['continent'] = cont
             await query.edit_message_text("Generating map...")
             await send_map_with_options(query, context, user_id)
@@ -272,7 +272,7 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     continent = opts.get('continent')
 
     # --- КОРРЕКТНОЕ ОПРЕДЕЛЕНИЕ bbox и filtered_places ---
-    if scale == 'continent' and continent in CONTINENT_BBOX:
+    if scale == 'continent' and continent and continent in CONTINENT_BBOX:
         bbox = CONTINENT_BBOX[continent]
         filtered_places = [p for p in places if is_in_continent(p[1], p[2], continent)]
     elif scale == 'world':
