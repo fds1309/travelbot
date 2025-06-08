@@ -197,16 +197,18 @@ async def handle_city_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
             else:
                 await update.message.reply_text('Invalid number. Please try again.')
         except Exception:
-            await update.message.reply_text('Please reply with the number of the correct city.')
+            await update.message.reply_text('Please reply with the number of the correct place.')
 
 async def ask_map_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_temp_options[user_id] = {'scale': 'auto', 'continent': None}
+    user_temp_options[user_id] = {}
     keyboard = [
         [InlineKeyboardButton("Auto", callback_data="scale_auto")],
         [InlineKeyboardButton("World", callback_data="scale_world")],
         [InlineKeyboardButton("Continent", callback_data="scale_continent")]
     ]
+
+    #keyboard = [[InlineKeyboardButton(c, callback_data=c)] for c in ["Europe", "Asia", "Africa", "North America", "South America", "Australia"]]
     await update.message.reply_text(
         "Choose map scale:",
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -238,7 +240,7 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
             MAP_SETTINGS_STATE.pop(user_id, None)
             return
         elif data == 'scale_continent':
-            keyboard = [[InlineKeyboardButton(c, callback_data=f"continent_{c}")] for c in ["Europe", "Asia", "Africa", "North America", "South America", "Australia"]]
+            keyboard = [[InlineKeyboardButton(c, callback_data=c)] for c in ["Europe", "Asia", "Africa", "North America", "South America", "Australia"]]
             await query.edit_message_text(
                 "Choose continent:",
                 reply_markup=InlineKeyboardMarkup(keyboard)
@@ -246,13 +248,12 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
             MAP_SETTINGS_STATE[user_id]['step'] = 'continent'
             return
     if state.get('step') == 'continent':
-        if data.startswith('continent_'):
-            cont = data.split('_', 1)[1].strip().title()
-            user_temp_options[user_id]['continent'] = cont
-            await query.edit_message_text("Generating map...")
-            await send_map_with_options(query, context, user_id)
-            MAP_SETTINGS_STATE.pop(user_id, None)
-            return
+        cont = data.strip().title()
+        user_temp_options[user_id]['continent'] = cont
+        await query.edit_message_text("Generating map...")
+        await send_map_with_options(query, context, user_id)
+        MAP_SETTINGS_STATE.pop(user_id, None)
+        return
 
 async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
