@@ -76,6 +76,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '/remove [city] - Remove a visited place\n'
         '/mapimg - Generate your travel map (Image)\n'
         '/list - List all visited places\n'
+        '/lang - Change map language\n'
     )
 
 async def add_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -531,6 +532,7 @@ async def set_bot_commands(application):
         BotCommand('remove', 'Remove a visited city'),
         BotCommand('mapimg', 'Generate your travel map (Image)'),
         BotCommand('list', 'List all visited cities'),
+        BotCommand('lang', 'Change map language')
     ]
     await application.bot.set_my_commands(commands)
 
@@ -593,10 +595,10 @@ def main():
     application.add_handler(CommandHandler("mapimg", mapimg_command))
     application.add_handler(CommandHandler("list", list_places))
     application.add_handler(CommandHandler("remove", remove_place))
-    application.add_handler(CallbackQueryHandler(map_settings_callback))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
     application.add_handler(CommandHandler("lang", lang_command))
     application.add_handler(CallbackQueryHandler(lang_callback, pattern=r'^lang_'))
+    application.add_handler(CallbackQueryHandler(map_settings_callback))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
     application.run_polling()
 
 if __name__ == '__main__':
