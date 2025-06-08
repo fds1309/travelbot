@@ -334,18 +334,26 @@ async def handle_custom_region(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         USER_INPUT_STATE.pop(user_id, None)
 
-def get_bbox_with_lat_correction(min_lon, min_lat, max_lon, max_lat, center_lat=None):
+def get_bbox_with_lat_correction(min_lon, min_lat, max_lon, max_lat, center_lat=None, is_continent=False):
     """Calculate bbox with latitude correction to compensate for Mercator projection."""
     if center_lat is None:
         center_lat = (min_lat + max_lat) / 2
     
-    # Усиленная коррекция по широте
-    lat_factor = abs(math.cos(math.radians(center_lat)))
-    # Минимальный фактор уменьшен для большей коррекции на высоких широтах
-    lat_factor = max(0.2, lat_factor)
-    # Дополнительное уменьшение для высоких широт
-    if abs(center_lat) > 45:
-        lat_factor *= 0.7
+    # Более мягкая коррекция для континентов
+    if is_continent:
+        # Для континентов используем более мягкую коррекцию
+        lat_factor = abs(math.cos(math.radians(center_lat)))
+        # Минимальный фактор увеличен для континентов
+        lat_factor = max(0.6, lat_factor)
+        # Дополнительное уменьшение только для очень высоких широт
+        if abs(center_lat) > 60:
+            lat_factor *= 0.9
+    else:
+        # Для остальных случаев (custom region, auto) используем более сильную коррекцию
+        lat_factor = abs(math.cos(math.radians(center_lat)))
+        lat_factor = max(0.3, lat_factor)
+        if abs(center_lat) > 45:
+            lat_factor *= 0.8
     
     # Рассчитываем размеры окна
     lon_span = max_lon - min_lon
@@ -398,8 +406,8 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
             lat + base_lat_span/2
         )
         
-        # Применяем коррекцию по широте
-        bbox = get_bbox_with_lat_correction(*bbox, center_lat=lat)
+        # Применяем коррекцию по широте (не континент)
+        bbox = get_bbox_with_lat_correction(*bbox, center_lat=lat, is_continent=False)
         
         # Проверяем, не вышли ли за пределы допустимых значений
         bbox = (
@@ -414,12 +422,12 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         bbox = CONTINENT_BBOX[continent]
         # Применяем коррекцию по широте для континентов
         center_lat = (bbox[1] + bbox[3]) / 2
-        bbox = get_bbox_with_lat_correction(*bbox, center_lat=center_lat)
+        bbox = get_bbox_with_lat_correction(*bbox, center_lat=center_lat, is_continent=True)
         filtered_places = [p for p in places if is_in_continent(p[1], p[2], continent)]
     elif scale == 'world':
         bbox = CONTINENT_BBOX['World']
-        # Для мира тоже применяем коррекцию, но слабее
-        bbox = get_bbox_with_lat_correction(*bbox, center_lat=0)
+        # Для мира используем очень мягкую коррекцию
+        bbox = get_bbox_with_lat_correction(*bbox, center_lat=0, is_continent=True)
         filtered_places = places
     else:  # auto
         lats = [lat for _, lat, _, _ in places]
@@ -434,8 +442,8 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Формируем начальный bbox с отступами
         bbox = (min_lon - dlon, min_lat - dlat, max_lon + dlon, max_lat + dlat)
         
-        # Применяем коррекцию по широте
-        bbox = get_bbox_with_lat_correction(*bbox)
+        # Применяем коррекцию по широте (не континент)
+        bbox = get_bbox_with_lat_correction(*bbox, is_continent=False)
         
         filtered_places = places
 
