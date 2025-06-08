@@ -50,7 +50,7 @@ CONTINENT_BBOX = {
     'North America': (-170, 10, -50, 80),
     'South America': (-90, -60, -30, 15),
     'Australia':     (110, -50, 180, -10),
-    'World':         (-180, -85, 180, 85)
+    'World':         (-180, -55, 180, 75)
 }
 
 def init_db():
@@ -332,7 +332,7 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         else:
             zoom = 3
 
-    fig = plt.figure(figsize=(10, 5))
+    fig = plt.figure(figsize=(16, 8)) #image size
     tiler = cimgt.GoogleTiles()
     ax = plt.axes(projection=tiler.crs)
     ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
