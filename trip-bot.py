@@ -300,33 +300,71 @@ async def handle_custom_region(update: Update, context: ContextTypes.DEFAULT_TYP
     if user_id not in USER_INPUT_STATE or USER_INPUT_STATE[user_id].get('waiting_for') != 'custom_region':
         return
 
+    # Если пользователь выбирает из списка
+    if 'custom_region_candidates' in context.user_data:
+        try:
+            idx = int(update.message.text.strip()) - 1
+            locations = context.user_data['custom_region_candidates']
+            if 0 <= idx < len(locations):
+                location = locations[idx]
+                region_name = location.raw.get('display_name', location.address)
+                lat, lon = location.latitude, location.longitude
+                user_temp_options[user_id] = {
+                    'scale': 'custom',
+                    'region': {
+                        'name': region_name,
+                        'lat': lat,
+                        'lon': lon,
+                        'address': region_name
+                    }
+                }
+                await update.message.reply_text(f"Generating map centered on {region_name}...")
+                await generate_map_image(update, context)
+                USER_INPUT_STATE.pop(user_id, None)
+                del context.user_data['custom_region_candidates']
+                return
+            else:
+                await update.message.reply_text('Invalid number. Please try again.')
+                return
+        except Exception:
+            await update.message.reply_text('Please reply with the number of the correct region.')
+            return
+
     region_name = update.message.text.strip()
     try:
-        geocode = get_geocoder()
-        location = geocode(region_name, exactly_one=True, language="en", addressdetails=True)
-        
-        if not location:
+        geolocator = Nominatim(user_agent="travel_map_bot", timeout=10)
+        locations = list(geolocator.geocode(region_name, exactly_one=False, language="en", addressdetails=True, limit=8))
+        if not locations:
             await update.message.reply_text(
                 "Could not find this region. Please try again with a different name or use /mapimg to start over."
             )
             USER_INPUT_STATE.pop(user_id, None)
             return
-
-        # Сохраняем настройки для построения карты
+        if len(locations) > 1:
+            options = []
+            for idx, loc in enumerate(locations):
+                address = loc.raw.get('display_name', loc.address)
+                options.append(f"{idx+1}. {address}")
+            context.user_data['custom_region_candidates'] = locations
+            await update.message.reply_text(
+                'Several regions found with this name. Please reply with the number of the correct one:\n' + '\n'.join(options)
+            )
+            return
+        location = locations[0]
+        region_name = location.raw.get('display_name', location.address)
+        lat, lon = location.latitude, location.longitude
         user_temp_options[user_id] = {
             'scale': 'custom',
             'region': {
                 'name': region_name,
-                'lat': location.latitude,
-                'lon': location.longitude,
-                'address': location.address
+                'lat': lat,
+                'lon': lon,
+                'address': region_name
             }
         }
-
-        await update.message.reply_text(f"Generating map centered on {location.address}...")
+        await update.message.reply_text(f"Generating map centered on {region_name}...")
         await generate_map_image(update, context)
         USER_INPUT_STATE.pop(user_id, None)
-
     except Exception as e:
         logger.error(f"Error processing custom region: {e}")
         await update.message.reply_text(
@@ -353,12 +391,12 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # Определяем bbox и filtered_places в зависимости от масштаба
     if scale == 'custom' and 'region' in opts:
-        # Для пользовательского региона используем фиксированный размер окна
+        # Для пользовательского региона используем увеличенное приближение
         region = opts['region']
         lat, lon = region['lat'], region['lon']
-        # Размер окна примерно как для континента
-        lat_span = 20  # примерно 2000 км
-        lon_span = 40  # примерно 4000 км на экваторе
+        # Меньший размер окна: страна/область
+        lat_span = 8  # примерно 800 км
+        lon_span = 12 # примерно 1200 км на экваторе
         bbox = (lon - lon_span/2, lat - lat_span/2, lon + lon_span/2, lat + lat_span/2)
         filtered_places = places  # показываем все точки
     elif scale == 'continent' and continent and continent in CONTINENT_BBOX:
@@ -392,7 +430,7 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if scale == 'world':
         zoom = 3
     elif scale == 'continent' or scale == 'custom':
-        zoom = 4
+        zoom = 5
     else:
         lat_range = max_lat - min_lat
         lon_range = max_lon - min_lon
