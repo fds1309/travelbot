@@ -227,14 +227,14 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
             user_temp_options[user_id]['scale'] = 'auto'
             user_temp_options[user_id]['continent'] = None
             await query.edit_message_text("Generating map...")
-            await generate_map_image(query, context)
+            await send_map_with_options(query, context, user_id)
             MAP_SETTINGS_STATE.pop(user_id, None)
             return
         elif data == 'scale_world':
             user_temp_options[user_id]['scale'] = 'world'
             user_temp_options[user_id]['continent'] = None
             await query.edit_message_text("Generating map...")
-            await generate_map_image(query, context)
+            await send_map_with_options(query, context, user_id)
             MAP_SETTINGS_STATE.pop(user_id, None)
             return
         elif data == 'scale_continent':
@@ -250,7 +250,7 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
             cont = data.split('_', 1)[1]
             user_temp_options[user_id]['continent'] = cont
             await query.edit_message_text("Generating map...")
-            await generate_map_image(query, context)
+            await send_map_with_options(query, context, user_id)
             MAP_SETTINGS_STATE.pop(user_id, None)
             return
 
