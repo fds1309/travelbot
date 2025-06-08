@@ -517,7 +517,7 @@ async def set_bot_commands(application):
 
 def main():
     init_db()
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = Application.builder().token(BOT_TOKEN).post_init(set_bot_commands).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("add", add_place))
     application.add_handler(CommandHandler("mapimg", mapimg_command))
@@ -525,7 +525,6 @@ def main():
     application.add_handler(CommandHandler("remove", remove_place))
     application.add_handler(CallbackQueryHandler(map_settings_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
-    application.run_async(set_bot_commands(application))
     application.run_polling()
 
 if __name__ == '__main__':
