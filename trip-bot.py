@@ -235,9 +235,9 @@ async def send_map_with_options(query, context, user_id, is_image):
             await context.bot.send_message(chat_id=self.chat_id, **kwargs)
     dummy_update = type('DummyUpdate', (), {'message': DummyMessage(query.message.chat_id), 'effective_user': type('User', (), {'id': user_id})})()
     if is_image:
-        await generate_map_image(dummy_update, context)
+        await mapimg_command(dummy_update, context)
     else:
-        await generate_map(dummy_update, context)
+        await map_command(dummy_update, context)
 
 async def list_places(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List all visited places for the user."""
