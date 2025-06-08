@@ -159,6 +159,7 @@ async def ask_map_settings(update: Update, context: ContextTypes.DEFAULT_TYPE, i
 async def map_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await ask_map_settings(update, context, is_image=False)
 
+
 async def mapimg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await ask_map_settings(update, context, is_image=True)
 
@@ -221,6 +222,125 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
             await send_map_with_options(query, context, user_id, state.get('is_image', False))
             MAP_SETTINGS_STATE.pop(user_id, None)
             return
+
+async def generate_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    opts = user_temp_options.get(user_id, {'labels': True, 'scale': 'auto', 'continent': None})
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT place_name, latitude, longitude FROM visited_places WHERE user_id = ?', (user_id,))
+    places = c.fetchall()
+    conn.close()
+
+    if not places:
+        await update.message.reply_text('You haven\'t added any places yet! Use /add [city] to start.')
+        return
+
+    filtered_places = filter_places_by_scale(places, opts)
+    map_location, map_zoom = get_map_center_zoom(filtered_places, opts)
+
+    m = folium.Map(
+        location=map_location,
+        zoom_start=map_zoom,
+        prefer_canvas=True,
+        tiles='CartoDB positron',
+        control_scale=False,
+        zoom_control=False
+    )
+
+    for place_name, lat, lon in filtered_places:
+        if opts.get('labels', True):
+            folium.Marker(
+                location=[lat, lon],
+                popup=place_name,
+                icon=folium.Icon(color='red', icon='info-sign')
+            ).add_to(m)
+        else:
+            folium.Marker(
+                location=[lat, lon],
+                icon=folium.Icon(color='red', icon='info-sign')
+            ).add_to(m)
+
+    map_file = TEMP_DIR / f'user_map_{user_id}.html'
+    m.save(str(map_file))
+
+    try:
+        with open(map_file, 'rb') as f:
+            await update.message.reply_document(
+                document=f,
+                filename=f'travel_map_{user_id}.html'
+            )
+    finally:
+        map_file.unlink(missing_ok=True)
+
+async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    opts = user_temp_options.get(user_id, {'labels': True, 'scale': 'auto', 'continent': None})
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT place_name, latitude, longitude FROM visited_places WHERE user_id = ?', (user_id,))
+    places = c.fetchall()
+    conn.close()
+
+    if not places:
+        await update.message.reply_text('You haven\'t added any places yet! Use /add [city] to start.')
+        return
+
+    filtered_places = filter_places_by_scale(places, opts)
+    map_location, map_zoom = get_map_center_zoom(filtered_places, opts)
+
+    m = folium.Map(
+        location=map_location,
+        zoom_start=map_zoom,
+        prefer_canvas=True,
+        tiles='CartoDB positron',
+        control_scale=False,
+        zoom_control=False
+    )
+
+    for place_name, lat, lon in filtered_places:
+        if opts.get('labels', True):
+            folium.Marker(
+                location=[lat, lon],
+                popup=place_name,
+                icon=folium.Icon(color='red', icon='info-sign')
+            ).add_to(m)
+        else:
+            folium.Marker(
+                location=[lat, lon],
+                icon=folium.Icon(color='red', icon='info-sign')
+            ).add_to(m)
+
+    map_file = TEMP_DIR / f'user_map_{user_id}.html'
+    m.save(str(map_file))
+
+    try:
+        chrome_options = Options()
+        chrome_options.add_argument('--headless')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--window-size=1280,720')
+        service = Service('/usr/local/bin/chromedriver')
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        try:
+            driver.get(f'file://{map_file.absolute()}')
+            png = driver.get_screenshot_as_png()
+            image = Image.open(io.BytesIO(png))
+            image_file = TEMP_DIR / f'user_map_{user_id}.png'
+            image.save(image_file, optimize=True, quality=85)
+            with open(image_file, 'rb') as f:
+                await update.message.reply_photo(photo=f)
+        finally:
+            driver.quit()
+    except Exception as e:
+        logger.error(f"Error generating map image: {str(e)}")
+        await update.message.reply_text('Error generating map image. Please try again.')
+    finally:
+        map_file.unlink(missing_ok=True)
+        if 'image_file' in locals():
+            image_file.unlink(missing_ok=True)
 
 async def send_map_with_options(query, context, user_id, is_image):
     # Получаем update.message для передачи в старые функции
