@@ -572,7 +572,11 @@ async def lang_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = data.split('_', 1)[1]
         user_id = query.from_user.id
         set_user_lang(user_id, lang)
-        await query.edit_message_text(f"Language set to: {dict(LANGUAGES)[lang]}")
+        lang_name = dict(LANGUAGES).get(lang, lang)
+        # Редактируем сообщение с кнопками
+        await query.edit_message_text(f"Language set to: {lang_name}")
+        # Отправляем отдельное сообщение-подтверждение
+        await context.bot.send_message(chat_id=query.message.chat_id, text=f"✅ Язык карты успешно изменён на: {lang_name}")
 
 def get_tile_url(lang):
     # Можно добавить больше серверов для других языков
