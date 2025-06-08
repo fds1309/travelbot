@@ -48,7 +48,7 @@ user_temp_options = {}
 
 # --- Новый блок: пошаговый выбор настроек через инлайн-кнопки ---
 # Состояния для выбора
-MAP_SETTINGS_STATE = {}
+#MAP_SETTINGS_STATE = {}
 
 BOT_VERSION = '0.7'
 
@@ -246,13 +246,16 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             #MAP_SETTINGS_STATE[user_id]['step'] = 'continent'
-            cont = data.strip().title()
-            user_temp_options[user_id]['scale'] = 'continent'
-            user_temp_options[user_id]['continent'] = cont
-            await query.edit_message_text("Generating map...")
-            await send_map_with_options(query, context, user_id)
-            #MAP_SETTINGS_STATE.pop(user_id, None)
             return
+    if state.get('step') == 'continent':
+        cont = data.strip().title()
+        user_temp_options[user_id]['scale'] = 'continent'
+        user_temp_options[user_id]['continent'] = cont
+
+        await query.edit_message_text("Generating map...")
+        await send_map_with_options(query, context, user_id)
+        #MAP_SETTINGS_STATE.pop(user_id, None)
+        return
 
 async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
