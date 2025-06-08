@@ -271,7 +271,24 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     scale = opts.get('scale', 'auto')
     continent = opts.get('continent')
 
-    bbox = get_bbox_for_scale(scale, continent, places)
+    # --- КОРРЕКТНОЕ ОПРЕДЕЛЕНИЕ bbox и filtered_places ---
+    if scale == 'continent' and continent in CONTINENT_BBOX:
+        bbox = CONTINENT_BBOX[continent]
+        filtered_places = [p for p in places if is_in_continent(p[1], p[2], continent)]
+    elif scale == 'world':
+        bbox = CONTINENT_BBOX['World']
+        filtered_places = places
+    else:  # auto
+        lats = [lat for _, lat, _ in places]
+        lons = [lon for _, _, lon in places]
+        min_lat, max_lat = min(lats), max(lats)
+        min_lon, max_lon = min(lons), max(lons)
+        dlat = (max_lat - min_lat) * 0.2 or 1
+        dlon = (max_lon - min_lon) * 0.2 or 1
+        bbox = (min_lon - dlon, min_lat - dlat, max_lon + dlon, max_lat + dlat)
+        # Для auto всегда все точки
+        filtered_places = places
+
     min_lon, min_lat, max_lon, max_lat = bbox
 
     # Для авто-режима делаем bbox квадратным и картинку квадратной
@@ -280,7 +297,7 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         fig = plt.figure(figsize=(12, 12))  # квадратная картинка
         dpi = 200
     else:
-        fig = plt.figure(figsize=(16, 8))   # для мира делаем не слишком вытянутую
+        fig = plt.figure(figsize=(16, 8))   # для мира и континентов
         dpi = 300
 
     # Выбор zoom в зависимости от масштаба
@@ -289,7 +306,6 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif scale == 'continent':
         zoom = 4
     else:
-        # Для авто-режима: чем меньше bbox, тем больше zoom
         lat_range = max_lat - min_lat
         lon_range = max_lon - min_lon
         max_range = max(lat_range, lon_range)
@@ -310,16 +326,10 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     ax.add_image(tiler, zoom)
 
     # Рисуем маркеры
-    if scale == 'continent' and continent:
-        filtered_places = [p for p in places if is_in_continent(p[1], p[2], continent)]
-    else:
-        filtered_places = places
-
     for place_name, lat, lon in filtered_places:
         ax.plot(lon, lat, marker='o', color='red', markersize=8, transform=ccrs.PlateCarree())
 
     plt.tight_layout()
-    # Добавляем подпись с именем бота
     ax.text(0.99, 0.01, BOT_NAME, fontsize=18, color='gray', alpha=0.7,
             ha='right', va='bottom', transform=ax.transAxes, fontweight='bold',
             bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, boxstyle='round,pad=0.2'))
@@ -328,7 +338,6 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     plt.savefig(image_file, bbox_inches='tight', dpi=dpi)
     plt.close(fig)
 
-    # Проверяем размер и ресайзим если нужно
     with Image.open(image_file) as img:
         max_dim = 1280
         if img.width > max_dim or img.height > max_dim:
