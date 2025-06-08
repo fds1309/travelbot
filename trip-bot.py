@@ -406,16 +406,17 @@ async def list_places(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text('You haven\'t added any places yet!')
         return
 
-    geocode = get_geocoder()
+    from geopy.geocoders import Nominatim
+    geolocator = Nominatim(user_agent="travel_map_bot", timeout=10)
     result_lines = []
     for place_name, lat, lon in places:
         # Если place_name уже содержит запятую и страну, используем как есть
         if ',' in place_name:
             result_lines.append(f"\U0001F4CD {place_name}")
         else:
-            # Получаем страну по координатам
+            # Получаем страну по координатам через reverse
             try:
-                location = geocode((lat, lon), exactly_one=True, language="en", addressdetails=True)
+                location = geolocator.reverse((lat, lon), exactly_one=True, language="en", addressdetails=True)
                 country = ''
                 if location and hasattr(location, 'raw'):
                     address = location.raw.get('address', {})
