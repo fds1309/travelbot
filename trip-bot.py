@@ -421,7 +421,7 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if scale == 'auto':
         min_lon, min_lat, max_lon, max_lat = make_bbox_square(min_lon, min_lat, max_lon, max_lat)
         fig = plt.figure(figsize=(12, 12))  # квадратная картинка
-        dpi = 200
+        dpi = 300
     else:
         fig = plt.figure(figsize=(16, 8))   # для мира и континентов
         dpi = 300
@@ -613,11 +613,14 @@ def make_bbox_square(min_lon, min_lat, max_lon, max_lat):
     center_lat = (min_lat + max_lat) / 2
     size = max(max_lon - min_lon, max_lat - min_lat)
     half = size / 2
+    addintional_lat = 0  
+    if center_lat > center_lon:
+        addintional_lat = 10
     return (
         center_lon - half,
-        center_lat - half,
+        center_lat - half + addintional_lat,
         center_lon + half,
-        center_lat + half
+        center_lat + half - addintional_lat
     )
 
 def is_in_continent(lat, lon, continent):
