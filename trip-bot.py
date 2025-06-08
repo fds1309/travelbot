@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
-import folium
+from staticmap import StaticMap, CircleMarker, Text
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
 from selenium import webdriver
@@ -37,6 +37,8 @@ user_temp_options = {}
 # Состояния для выбора
 MAP_SETTINGS_STATE = {}
 
+BOT_VERSION = '0.6'
+
 def init_db():
     """Initialize the SQLite database with optimized settings."""
     conn = sqlite3.connect(DB_PATH)
@@ -56,11 +58,10 @@ def get_geocoder():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a welcome message with available commands."""
     await update.message.reply_text(
-        'Welcome to Travel Map Bot! 🗺️\n'
+        f'Welcome to Travel Map Bot v{BOT_VERSION}! 🗺️\n'
         'Commands:\n'
         '/add [city] - Add a visited place (please send only the city name in English, without country or other objects)\n'
         '/remove [city] - Remove a visited place\n'
-        '/map - Generate your travel map (HTML)\n'
         '/mapimg - Generate your travel map (Image)\n'
         '/list - List all visited places\n'
     )
@@ -303,53 +304,17 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     filtered_places = filter_places_by_scale(places, opts)
-    map_location, map_zoom = get_map_center_zoom(filtered_places, opts)
-
-    m = folium.Map(
-        location=map_location,
-        zoom_start=map_zoom,
-        prefer_canvas=True,
-        tiles='CartoDB positron',
-        control_scale=False,
-        zoom_control=False
-    )
-
+    m = StaticMap(800, 400, url_template='http://a.tile.openstreetmap.org/{z}/{x}/{y}.png')
     for place_name, lat, lon in filtered_places:
-        folium.Marker(
-            location=[lat, lon],
-            popup=place_name if opts.get('labels', True) else None,
-            tooltip=place_name if opts.get('labels', True) else None,
-            icon=folium.Icon(color='red', icon='info-sign')
-        ).add_to(m)
-
-    map_file = TEMP_DIR / f'user_map_{user_id}.html'
-    m.save(str(map_file))
-
-    try:
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--window-size=1280,720')
-        service = Service('/usr/local/bin/chromedriver')
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        try:
-            driver.get(f'file://{map_file.absolute()}')
-            png = driver.get_screenshot_as_png()
-            image = Image.open(io.BytesIO(png))
-            image_file = TEMP_DIR / f'user_map_{user_id}.png'
-            image.save(image_file, optimize=True, quality=85)
-            with open(image_file, 'rb') as f:
-                await update.message.reply_photo(photo=f)
-        finally:
-            driver.quit()
-    except Exception as e:
-        logger.error(f"Error generating map image: {str(e)}")
-        await update.message.reply_text('Error generating map image. Please try again.')
-    finally:
-        map_file.unlink(missing_ok=True)
-        if 'image_file' in locals():
-            image_file.unlink(missing_ok=True)
+        m.add_marker(CircleMarker((lon, lat), 'red', 12))
+        if opts.get('labels', True):
+            m.add_text(Text(place_name, (lon, lat), 12, 'black', offset_y=-15))
+    image = m.render()
+    image_file = TEMP_DIR / f'user_map_{user_id}.png'
+    image.save(image_file)
+    with open(image_file, 'rb') as f:
+        await update.message.reply_photo(photo=f)
+    image_file.unlink(missing_ok=True)
 
 async def send_map_with_options(query, context, user_id, is_image):
     # Получаем update.message для передачи в старые функции
