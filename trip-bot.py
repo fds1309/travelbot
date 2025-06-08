@@ -6,14 +6,14 @@ from typing import Optional, Tuple
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
-from staticmap import StaticMap, CircleMarker, Text
+from staticmap import StaticMap, CircleMarker
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from PIL import Image
-import io
+from PIL import Image, ImageDraw, ImageFont
+#from selenium import webdriver
+#from selenium.webdriver.chrome.service import Service
+#from selenium.webdriver.chrome.options import Options
+#import io
 
 # Configure logging
 logging.basicConfig(
@@ -305,11 +305,24 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     filtered_places = filter_places_by_scale(places, opts)
     m = StaticMap(800, 400, url_template='http://a.tile.openstreetmap.org/{z}/{x}/{y}.png')
+    marker_coords = []
     for place_name, lat, lon in filtered_places:
         m.add_marker(CircleMarker((lon, lat), 'red', 12))
-        if opts.get('labels', True):
-            m.add_text(Text(place_name, (lon, lat), 12, 'black', offset_y=-15))
+        marker_coords.append((place_name, lon, lat))
     image = m.render()
+
+    # Добавляем подписи через Pillow, если нужно
+    if opts.get('labels', True):
+        draw = ImageDraw.Draw(image)
+        # Попробуем найти системный шрифт, иначе используем дефолтный
+        try:
+            font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 14)
+        except Exception:
+            font = ImageFont.load_default()
+        for place_name, lon, lat in marker_coords:
+            x, y = m.coordinate_to_pixel(lon, lat)
+            draw.text((x + 10, y - 10), place_name, font=font, fill='black')
+
     image_file = TEMP_DIR / f'user_map_{user_id}.png'
     image.save(image_file)
     with open(image_file, 'rb') as f:
