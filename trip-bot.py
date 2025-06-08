@@ -350,7 +350,7 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     plt.tight_layout()
     image_file = TEMP_DIR / f'user_map_{user_id}.png'
-    plt.savefig(image_file, bbox_inches='tight', dpi=200)  # увеличенный dpi!
+    plt.savefig(image_file, bbox_inches='tight', dpi=300)  # увеличенный dpi!
     plt.close(fig)
     with open(image_file, 'rb') as f:
         await update.message.reply_photo(photo=f)
