@@ -56,12 +56,12 @@ BOT_VERSION = '0.7'
 CONTINENT_BBOX = {
     'Europe':        (-10, 35, 60, 70),
     'Russia':        (20, 40, 180, 75),
-    'South Asia':    (25, 5, 180, 55),
+    'South Asia':    (25, 5, 150, 55),
     'Africa':        (-20, -35, 55, 35),
     'North America': (-170, 10, -50, 80),
     'South America': (-90, -60, -30, 15),
     'Australia':     (110, -50, 180, -10),
-    'World':         (-160, -55, 200, 75)
+    'World':         (-180, -55, 180, 75)
 }
 
 def init_db():
@@ -476,7 +476,7 @@ def is_in_continent(lat, lon, continent):
     if continent == 'Russia':
         return 40 <= lat <= 75 and 20 <= lon <= 180
     if continent == 'South Asia':
-        return 5 <= lat <= 55 and 25 <= lon <= 180
+        return 5 <= lat <= 55 and 25 <= lon <= 150
     if continent == 'Africa':
         return -35 <= lat <= 35 and -20 <= lon <= 55
     if continent == 'North America':
