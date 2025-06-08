@@ -4,8 +4,8 @@ import sqlite3
 from pathlib import Path
 from typing import Optional, Tuple
 
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import folium
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
@@ -33,6 +33,10 @@ TEMP_DIR.mkdir(exist_ok=True)
 # Временное хранилище настроек пользователя (в памяти)
 user_temp_options = {}
 
+# --- Новый блок: пошаговый выбор настроек через инлайн-кнопки ---
+# Состояния для выбора
+MAP_SETTINGS_STATE = {}
+
 def init_db():
     """Initialize the SQLite database with optimized settings."""
     conn = sqlite3.connect(DB_PATH)
@@ -59,7 +63,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '/map - Generate your travel map (HTML)\n'
         '/mapimg - Generate your travel map (Image)\n'
         '/list - List all visited places\n'
-        '/mapoptions - Set map options (labels, scale)\n'
     )
 
 async def add_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -138,183 +141,103 @@ async def handle_city_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except Exception:
             await update.message.reply_text('Please reply with the number of the correct city.')
 
-async def mapoptions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def ask_map_settings(update: Update, context: ContextTypes.DEFAULT_TYPE, is_image=False):
     user_id = update.effective_user.id
-    user_temp_options[user_id] = user_temp_options.get(user_id, {'labels': True, 'scale': 'auto', 'continent': None, 'country': None})
-    reply_keyboard = [["Labels: On", "Labels: Off"], ["Scale: Auto", "Scale: World", "Scale: Continent", "Scale: Country"]]
+    # Сбросить временные настройки
+    user_temp_options[user_id] = {'labels': True, 'scale': 'auto', 'continent': None}
+    # Первый шаг — подписи
+    keyboard = [
+        [InlineKeyboardButton("Show labels", callback_data=f"labels_on|{is_image}")],
+        [InlineKeyboardButton("Hide labels", callback_data=f"labels_off|{is_image}")]
+    ]
     await update.message.reply_text(
-        'Map options:\nChoose labels and scale:',
-        reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True, resize_keyboard=True)
+        "Choose if you want to show city labels on the map:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
+    MAP_SETTINGS_STATE[user_id] = {'step': 'labels', 'is_image': is_image}
 
-async def handle_mapoptions(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text = update.message.text.strip()
-    opts = user_temp_options.get(user_id, {'labels': True, 'scale': 'auto', 'continent': None, 'country': None})
-    if text == "Labels: On":
-        opts['labels'] = True
-        await update.message.reply_text('Labels will be shown.', reply_markup=ReplyKeyboardRemove())
-    elif text == "Labels: Off":
-        opts['labels'] = False
-        await update.message.reply_text('Labels will be hidden.', reply_markup=ReplyKeyboardRemove())
-    elif text == "Scale: Auto":
-        opts['scale'] = 'auto'
-        opts['continent'] = None
-        opts['country'] = None
-        await update.message.reply_text('Scale set to Auto.', reply_markup=ReplyKeyboardRemove())
-    elif text == "Scale: World":
-        opts['scale'] = 'world'
-        opts['continent'] = None
-        opts['country'] = None
-        await update.message.reply_text('Scale set to World.', reply_markup=ReplyKeyboardRemove())
-    elif text == "Scale: Continent":
-        opts['scale'] = 'continent'
-        # Показать выбор континента
-        continents = [[c] for c in ["Europe", "Asia", "Africa", "North America", "South America", "Australia"]]
-        await update.message.reply_text('Choose continent:', reply_markup=ReplyKeyboardMarkup(continents, one_time_keyboard=True, resize_keyboard=True))
+async def map_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await ask_map_settings(update, context, is_image=False)
+
+async def mapimg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await ask_map_settings(update, context, is_image=True)
+
+async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    state = MAP_SETTINGS_STATE.get(user_id, {})
+    data = query.data
+    # Обработка выбора подписи
+    if state.get('step') == 'labels':
+        if data.startswith('labels_on'):
+            user_temp_options[user_id]['labels'] = True
+        elif data.startswith('labels_off'):
+            user_temp_options[user_id]['labels'] = False
+        # Следующий шаг — масштаб
+        keyboard = [
+            [InlineKeyboardButton("Auto", callback_data=f"scale_auto|{state.get('is_image', False)}")],
+            [InlineKeyboardButton("World", callback_data=f"scale_world|{state.get('is_image', False)}")],
+            [InlineKeyboardButton("Continent", callback_data=f"scale_continent|{state.get('is_image', False)}")]
+        ]
+        await query.edit_message_text(
+            "Choose map scale:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        MAP_SETTINGS_STATE[user_id]['step'] = 'scale'
         return
-    elif text in ["Europe", "Asia", "Africa", "North America", "South America", "Australia"]:
-        opts['continent'] = text
-        opts['country'] = None
-        # Показать выбор страны (кроме особых)
-        if text in ["Russia", "China", "USA", "Australia"]:
-            opts['country'] = text
-            await update.message.reply_text(f'Scale set to country: {text}', reply_markup=ReplyKeyboardRemove())
-        else:
-            await update.message.reply_text('Enter country name (in English):', reply_markup=ReplyKeyboardRemove())
+    # Обработка выбора масштаба
+    if state.get('step') == 'scale':
+        if data.startswith('scale_auto'):
+            user_temp_options[user_id]['scale'] = 'auto'
+            user_temp_options[user_id]['continent'] = None
+            await query.edit_message_text("Generating map...")
+            await send_map_with_options(query, context, user_id, state.get('is_image', False))
+            MAP_SETTINGS_STATE.pop(user_id, None)
             return
-    elif opts.get('scale') == 'continent' and opts.get('continent') and not opts.get('country'):
-        opts['country'] = text
-        await update.message.reply_text(f'Scale set to country: {text}', reply_markup=ReplyKeyboardRemove())
-    elif text == "Scale: Country":
-        opts['scale'] = 'country'
-        await update.message.reply_text('Enter country name (in English):', reply_markup=ReplyKeyboardRemove())
-        return
-    user_temp_options[user_id] = opts
-
-async def generate_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Generate an HTML map of visited places with user options."""
-    user_id = update.effective_user.id
-    opts = user_temp_options.get(user_id, {'labels': True, 'scale': 'auto', 'continent': None, 'country': None})
-
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT place_name, latitude, longitude FROM visited_places WHERE user_id = ?', (user_id,))
-    places = c.fetchall()
-    conn.close()
-
-    if not places:
-        await update.message.reply_text('You haven\'t added any places yet! Use /add [city] to start.')
-        return
-
-    # Фильтрация точек по масштабу
-    filtered_places = filter_places_by_scale(places, opts)
-
-    # Определяем центр и зум
-    map_location, map_zoom = get_map_center_zoom(filtered_places, opts)
-
-    m = folium.Map(
-        location=map_location,
-        zoom_start=map_zoom,
-        prefer_canvas=True,
-        tiles='CartoDB positron',
-        control_scale=False,
-        zoom_control=False
-    )
-
-    for place_name, lat, lon in filtered_places:
-        if opts.get('labels', True):
-            folium.Marker(
-                location=[lat, lon],
-                popup=place_name,
-                icon=folium.Icon(color='red', icon='info-sign')
-            ).add_to(m)
-        else:
-            folium.Marker(
-                location=[lat, lon],
-                icon=folium.Icon(color='red', icon='info-sign')
-            ).add_to(m)
-
-    map_file = TEMP_DIR / f'user_map_{user_id}.html'
-    m.save(str(map_file))
-
-    try:
-        with open(map_file, 'rb') as f:
-            await update.message.reply_document(
-                document=f,
-                filename=f'travel_map_{user_id}.html'
+        elif data.startswith('scale_world'):
+            user_temp_options[user_id]['scale'] = 'world'
+            user_temp_options[user_id]['continent'] = None
+            await query.edit_message_text("Generating map...")
+            await send_map_with_options(query, context, user_id, state.get('is_image', False))
+            MAP_SETTINGS_STATE.pop(user_id, None)
+            return
+        elif data.startswith('scale_continent'):
+            user_temp_options[user_id]['scale'] = 'continent'
+            # Следующий шаг — выбор континента
+            keyboard = [[InlineKeyboardButton(c, callback_data=f"continent_{c}|{state.get('is_image', False)}")] for c in ["Europe", "Asia", "Africa", "North America", "South America", "Australia"]]
+            await query.edit_message_text(
+                "Choose continent:",
+                reply_markup=InlineKeyboardMarkup(keyboard)
             )
-    finally:
-        map_file.unlink(missing_ok=True)
+            MAP_SETTINGS_STATE[user_id]['step'] = 'continent'
+            return
+    # Обработка выбора континента
+    if state.get('step') == 'continent':
+        if data.startswith('continent_'):
+            cont = data.split('_', 1)[1].split('|')[0]
+            user_temp_options[user_id]['continent'] = cont
+            await query.edit_message_text("Generating map...")
+            await send_map_with_options(query, context, user_id, state.get('is_image', False))
+            MAP_SETTINGS_STATE.pop(user_id, None)
+            return
 
-async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Generate a PNG image of the visited places map with user options."""
-    user_id = update.effective_user.id
-    opts = user_temp_options.get(user_id, {'labels': True, 'scale': 'auto', 'continent': None, 'country': None})
-
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT place_name, latitude, longitude FROM visited_places WHERE user_id = ?', (user_id,))
-    places = c.fetchall()
-    conn.close()
-
-    if not places:
-        await update.message.reply_text('You haven\'t added any places yet! Use /add [city] to start.')
-        return
-
-    filtered_places = filter_places_by_scale(places, opts)
-    map_location, map_zoom = get_map_center_zoom(filtered_places, opts)
-
-    m = folium.Map(
-        location=map_location,
-        zoom_start=map_zoom,
-        prefer_canvas=True,
-        tiles='CartoDB positron',
-        control_scale=False,
-        zoom_control=False
-    )
-
-    for place_name, lat, lon in filtered_places:
-        if opts.get('labels', True):
-            folium.Marker(
-                location=[lat, lon],
-                popup=place_name,
-                icon=folium.Icon(color='red', icon='info-sign')
-            ).add_to(m)
-        else:
-            folium.Marker(
-                location=[lat, lon],
-                icon=folium.Icon(color='red', icon='info-sign')
-            ).add_to(m)
-
-    map_file = TEMP_DIR / f'user_map_{user_id}.html'
-    m.save(str(map_file))
-
-    try:
-        chrome_options = Options()
-        chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--window-size=1280,720')
-        service = Service('/usr/local/bin/chromedriver')
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        try:
-            driver.get(f'file://{map_file.absolute()}')
-            png = driver.get_screenshot_as_png()
-            image = Image.open(io.BytesIO(png))
-            image_file = TEMP_DIR / f'user_map_{user_id}.png'
-            image.save(image_file, optimize=True, quality=85)
-            with open(image_file, 'rb') as f:
-                await update.message.reply_photo(photo=f)
-        finally:
-            driver.quit()
-    except Exception as e:
-        logger.error(f"Error generating map image: {str(e)}")
-        await update.message.reply_text('Error generating map image. Please try again.')
-    finally:
-        map_file.unlink(missing_ok=True)
-        if 'image_file' in locals():
-            image_file.unlink(missing_ok=True)
+async def send_map_with_options(query, context, user_id, is_image):
+    # Получаем update.message для передачи в старые функции
+    class DummyMessage:
+        def __init__(self, chat_id):
+            self.chat_id = chat_id
+        async def reply_document(self, **kwargs):
+            await context.bot.send_document(chat_id=self.chat_id, **kwargs)
+        async def reply_photo(self, **kwargs):
+            await context.bot.send_photo(chat_id=self.chat_id, **kwargs)
+        async def reply_text(self, **kwargs):
+            await context.bot.send_message(chat_id=self.chat_id, **kwargs)
+    dummy_update = type('DummyUpdate', (), {'message': DummyMessage(query.message.chat_id), 'effective_user': type('User', (), {'id': user_id})})()
+    if is_image:
+        await generate_map_image(dummy_update, context)
+    else:
+        await generate_map(dummy_update, context)
 
 async def list_places(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List all visited places for the user."""
@@ -481,13 +404,11 @@ def main():
     # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("add", add_place))
-    application.add_handler(CommandHandler("map", generate_map))
+    application.add_handler(CommandHandler("map", map_command))
     application.add_handler(CommandHandler("list", list_places))
     application.add_handler(CommandHandler("remove", remove_place))
-    application.add_handler(CommandHandler("mapimg", generate_map_image))
-    application.add_handler(CommandHandler("mapoptions", mapoptions))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_mapoptions))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
+    application.add_handler(CommandHandler("mapimg", mapimg_command))
+    application.add_handler(CallbackQueryHandler(map_settings_callback))
     
     # Start bot
     application.run_polling()
