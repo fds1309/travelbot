@@ -3,6 +3,7 @@ import os
 import sqlite3
 from pathlib import Path
 from typing import Optional, Tuple
+import math
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
@@ -49,6 +50,9 @@ user_temp_options = {}
 # --- Новый блок: пошаговый выбор настроек через инлайн-кнопки ---
 # Состояния для выбора
 MAP_SETTINGS_STATE = {}
+
+# Состояния для пользовательского ввода
+USER_INPUT_STATE = {}
 
 BOT_VERSION = '0.7'
 
@@ -220,10 +224,10 @@ async def ask_map_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("Auto", callback_data="scale_auto")],
         [InlineKeyboardButton("World", callback_data="scale_world")],
-        [InlineKeyboardButton("Continent", callback_data="scale_continent")]
+        [InlineKeyboardButton("Continent", callback_data="scale_continent")],
+        [InlineKeyboardButton("Custom Region", callback_data="scale_custom")]
     ]
 
-    #keyboard = [[InlineKeyboardButton(c, callback_data=c)] for c in ["Europe", "Asia", "Africa", "North America", "South America", "Australia"]]
     await update.message.reply_text(
         "Choose map scale:",
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -264,6 +268,14 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
             )
             MAP_SETTINGS_STATE[user_id]['step'] = 'continent'
             return
+        elif data == 'scale_custom':
+            await query.edit_message_text(
+                "Please enter the name of the region (city, country, or area):",
+                reply_markup=None
+            )
+            USER_INPUT_STATE[user_id] = {'waiting_for': 'custom_region'}
+            MAP_SETTINGS_STATE.pop(user_id, None)
+            return
     if state.get('step') == 'continent':
         cont = data.strip().title()
         user_temp_options[user_id]['scale'] = 'continent'
@@ -272,6 +284,46 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await send_map_with_options(query, context, user_id)
         MAP_SETTINGS_STATE.pop(user_id, None)
         return
+
+async def handle_custom_region(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle user input for custom region."""
+    user_id = update.effective_user.id
+    if user_id not in USER_INPUT_STATE or USER_INPUT_STATE[user_id].get('waiting_for') != 'custom_region':
+        return
+
+    region_name = update.message.text.strip()
+    try:
+        geocode = get_geocoder()
+        location = geocode(region_name, exactly_one=True, language="en", addressdetails=True)
+        
+        if not location:
+            await update.message.reply_text(
+                "Could not find this region. Please try again with a different name or use /mapimg to start over."
+            )
+            USER_INPUT_STATE.pop(user_id, None)
+            return
+
+        # Сохраняем настройки для построения карты
+        user_temp_options[user_id] = {
+            'scale': 'custom',
+            'region': {
+                'name': region_name,
+                'lat': location.latitude,
+                'lon': location.longitude,
+                'address': location.address
+            }
+        }
+
+        await update.message.reply_text(f"Generating map centered on {location.address}...")
+        await generate_map_image(update, context)
+        USER_INPUT_STATE.pop(user_id, None)
+
+    except Exception as e:
+        logger.error(f"Error processing custom region: {e}")
+        await update.message.reply_text(
+            "Error processing the region. Please try again or use /mapimg to start over."
+        )
+        USER_INPUT_STATE.pop(user_id, None)
 
 async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -290,8 +342,46 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     scale = opts.get('scale', 'auto')
     continent = opts.get('continent')
 
-    # --- КОРРЕКТНОЕ ОПРЕДЕЛЕНИЕ bbox и filtered_places ---
-    if scale == 'continent' and continent and continent in CONTINENT_BBOX:
+    # Определяем bbox и filtered_places в зависимости от масштаба
+    if scale == 'custom' and 'region' in opts:
+        # Для пользовательского региона используем адаптивный размер окна
+        region = opts['region']
+        lat, lon = region['lat'], region['lon']
+        
+        # Базовый размер окна
+        base_lon_span = 40  # примерно 4000 км на экваторе
+        
+        # Корректируем размер окна по широте
+        # Используем косинус широты для компенсации искажения проекции Меркатора
+        # Чем ближе к полюсам, тем меньше должно быть окно по широте
+        lat_factor = abs(math.cos(math.radians(lat)))
+        # Минимальный фактор 0.3 (для широт выше 70 градусов)
+        lat_factor = max(0.3, lat_factor)
+        
+        # Рассчитываем размеры окна
+        lon_span = base_lon_span
+        # Для широты используем меньший базовый размер и применяем корректировку
+        base_lat_span = 15  # базовый размер по широте
+        lat_span = base_lat_span * lat_factor
+        
+        # Формируем bbox
+        bbox = (
+            lon - lon_span/2,  # min_lon
+            lat - lat_span/2,  # min_lat
+            lon + lon_span/2,  # max_lon
+            lat + lat_span/2   # max_lat
+        )
+        
+        # Проверяем, не вышли ли за пределы допустимых значений
+        bbox = (
+            max(-180, min(180, bbox[0])),  # ограничиваем долготу
+            max(-85, min(85, bbox[1])),    # ограничиваем широту
+            max(-180, min(180, bbox[2])),  # ограничиваем долготу
+            max(-85, min(85, bbox[3]))     # ограничиваем широту
+        )
+        
+        filtered_places = places  # показываем все точки
+    elif scale == 'continent' and continent and continent in CONTINENT_BBOX:
         bbox = CONTINENT_BBOX[continent]
         filtered_places = [p for p in places if is_in_continent(p[1], p[2], continent)]
     elif scale == 'world':
@@ -302,8 +392,15 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         lons = [lon for _, _, lon, _ in places]
         min_lat, max_lat = min(lats), max(lats)
         min_lon, max_lon = min(lons), max(lons)
-        dlat = (max_lat - min_lat) * 0.2 or 1
+        
+        # Для auto режима тоже применяем корректировку по широте
+        center_lat = (min_lat + max_lat) / 2
+        lat_factor = abs(math.cos(math.radians(center_lat)))
+        lat_factor = max(0.3, lat_factor)
+        
+        dlat = (max_lat - min_lat) * 0.2 * lat_factor or 1
         dlon = (max_lon - min_lon) * 0.2 or 1
+        
         bbox = (min_lon - dlon, min_lat - dlat, max_lon + dlon, max_lat + dlat)
         filtered_places = places
 
@@ -321,7 +418,7 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Выбор zoom в зависимости от масштаба
     if scale == 'world':
         zoom = 3
-    elif scale == 'continent':
+    elif scale == 'continent' or scale == 'custom':
         zoom = 4
     else:
         lat_range = max_lat - min_lat
@@ -353,6 +450,13 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     ax.plot([], [], 'ro', label='Visited', transform=ccrs.PlateCarree())
     ax.plot([], [], 'bo', label='Want to visit', transform=ccrs.PlateCarree())
     ax.legend(loc='upper right', bbox_to_anchor=(0.99, 0.99))
+
+    # Добавляем название региона для пользовательского масштаба
+    if scale == 'custom' and 'region' in opts:
+        region_name = opts['region']['address']
+        ax.text(0.5, 0.02, f"Region: {region_name}", fontsize=12, color='gray', alpha=0.7,
+                ha='center', va='bottom', transform=ax.transAxes,
+                bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, boxstyle='round,pad=0.2'))
 
     ax.text(0.99, 0.01, BOT_NAME, fontsize=18, color='gray', alpha=0.7,
             ha='right', va='bottom', transform=ax.transAxes, fontweight='bold',
@@ -534,6 +638,8 @@ def main():
     application.add_handler(CommandHandler("remove", remove_place))
     application.add_handler(CallbackQueryHandler(map_settings_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
+    # Добавляем обработчик для пользовательского ввода региона
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_custom_region))
     application.run_polling()
 
 if __name__ == '__main__':
