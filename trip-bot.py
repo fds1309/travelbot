@@ -370,31 +370,6 @@ async def remove_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(f'Removed {places[0][0]} from your visited places!')
 
-def main():
-    """Initialize and start the bot."""
-    # Initialize database
-    init_db()
-    
-    # Initialize bot
-    application = Application.builder().token(BOT_TOKEN).build()
-
-    # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("add", add_place))
-    application.add_handler(CommandHandler("map", generate_map))
-    application.add_handler(CommandHandler("list", list_places))
-    application.add_handler(CommandHandler("remove", remove_place))
-    application.add_handler(CommandHandler("mapimg", generate_map_image))
-    application.add_handler(CommandHandler("mapoptions", mapoptions))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_mapoptions))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
-    
-    # Start bot
-    application.run_polling()
-
-if __name__ == '__main__':
-    main()
-
 # --- Вспомогательные функции ---
 def filter_places_by_scale(places, opts):
     # places: [(name, lat, lon), ...]
@@ -493,4 +468,28 @@ def is_in_country(lat, lon, country):
         return -44 <= lat <= -10 and 112 <= lon <= 154
     return False
 
+
+def main():
+    """Initialize and start the bot."""
+    # Initialize database
+    init_db()
     
+    # Initialize bot
+    application = Application.builder().token(BOT_TOKEN).build()
+
+    # Add handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("add", add_place))
+    application.add_handler(CommandHandler("map", generate_map))
+    application.add_handler(CommandHandler("list", list_places))
+    application.add_handler(CommandHandler("remove", remove_place))
+    application.add_handler(CommandHandler("mapimg", generate_map_image))
+    application.add_handler(CommandHandler("mapoptions", mapoptions))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_mapoptions))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
+    
+    # Start bot
+    application.run_polling()
+
+if __name__ == '__main__':
+    main()    
