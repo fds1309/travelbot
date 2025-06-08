@@ -334,43 +334,6 @@ async def handle_custom_region(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         USER_INPUT_STATE.pop(user_id, None)
 
-def get_bbox_with_lat_correction(min_lon, min_lat, max_lon, max_lat, center_lat=None, is_continent=False):
-    """Calculate bbox with latitude correction to compensate for Mercator projection."""
-    if center_lat is None:
-        center_lat = (min_lat + max_lat) / 2
-    
-    # Более мягкая коррекция для континентов
-    if is_continent:
-        # Для континентов используем более мягкую коррекцию
-        lat_factor = abs(math.cos(math.radians(center_lat)))
-        # Минимальный фактор увеличен для континентов
-        lat_factor = max(0.6, lat_factor)
-        # Дополнительное уменьшение только для очень высоких широт
-        if abs(center_lat) > 60:
-            lat_factor *= 0.9
-    else:
-        # Для остальных случаев (custom region, auto) используем более сильную коррекцию
-        lat_factor = abs(math.cos(math.radians(center_lat)))
-        lat_factor = max(0.3, lat_factor)
-        if abs(center_lat) > 45:
-            lat_factor *= 0.8
-    
-    # Рассчитываем размеры окна
-    lon_span = max_lon - min_lon
-    lat_span = max_lat - min_lat
-    
-    # Применяем коррекцию к размеру по широте
-    center_lon = (min_lon + max_lon) / 2
-    center_lat = (min_lat + max_lat) / 2
-    new_lat_span = lat_span * lat_factor
-    
-    return (
-        center_lon - lon_span/2,
-        center_lat - new_lat_span/2,
-        center_lon + lon_span/2,
-        center_lat + new_lat_span/2
-    )
-
 async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     opts = user_temp_options.get(user_id, {'scale': 'auto', 'continent': None})
@@ -390,61 +353,28 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # Определяем bbox и filtered_places в зависимости от масштаба
     if scale == 'custom' and 'region' in opts:
-        # Для пользовательского региона используем адаптивный размер окна
+        # Для пользовательского региона используем фиксированный размер окна
         region = opts['region']
         lat, lon = region['lat'], region['lon']
-        
-        # Базовый размер окна
-        base_lon_span = 40  # примерно 4000 км на экваторе
-        base_lat_span = 15  # базовый размер по широте
-        
-        # Формируем начальный bbox
-        bbox = (
-            lon - base_lon_span/2,
-            lat - base_lat_span/2,
-            lon + base_lon_span/2,
-            lat + base_lat_span/2
-        )
-        
-        # Применяем коррекцию по широте (не континент)
-        bbox = get_bbox_with_lat_correction(*bbox, center_lat=lat, is_continent=False)
-        
-        # Проверяем, не вышли ли за пределы допустимых значений
-        bbox = (
-            max(-180, min(180, bbox[0])),  # ограничиваем долготу
-            max(-85, min(85, bbox[1])),    # ограничиваем широту
-            max(-180, min(180, bbox[2])),  # ограничиваем долготу
-            max(-85, min(85, bbox[3]))     # ограничиваем широту
-        )
-        
+        # Размер окна примерно как для континента
+        lat_span = 20  # примерно 2000 км
+        lon_span = 40  # примерно 4000 км на экваторе
+        bbox = (lon - lon_span/2, lat - lat_span/2, lon + lon_span/2, lat + lat_span/2)
         filtered_places = places  # показываем все точки
     elif scale == 'continent' and continent and continent in CONTINENT_BBOX:
         bbox = CONTINENT_BBOX[continent]
-        # Применяем коррекцию по широте для континентов
-        center_lat = (bbox[1] + bbox[3]) / 2
-        bbox = get_bbox_with_lat_correction(*bbox, center_lat=center_lat, is_continent=True)
         filtered_places = [p for p in places if is_in_continent(p[1], p[2], continent)]
     elif scale == 'world':
         bbox = CONTINENT_BBOX['World']
-        # Для мира используем очень мягкую коррекцию
-        bbox = get_bbox_with_lat_correction(*bbox, center_lat=0, is_continent=True)
         filtered_places = places
     else:  # auto
         lats = [lat for _, lat, _, _ in places]
         lons = [lon for _, _, lon, _ in places]
         min_lat, max_lat = min(lats), max(lats)
         min_lon, max_lon = min(lons), max(lons)
-        
-        # Добавляем отступы
         dlat = (max_lat - min_lat) * 0.2 or 1
         dlon = (max_lon - min_lon) * 0.2 or 1
-        
-        # Формируем начальный bbox с отступами
         bbox = (min_lon - dlon, min_lat - dlat, max_lon + dlon, max_lat + dlat)
-        
-        # Применяем коррекцию по широте (не континент)
-        bbox = get_bbox_with_lat_correction(*bbox, is_continent=False)
-        
         filtered_places = places
 
     min_lon, min_lat, max_lon, max_lat = bbox
@@ -680,8 +610,9 @@ def main():
     application.add_handler(CommandHandler("list", list_places))
     application.add_handler(CommandHandler("remove", remove_place))
     application.add_handler(CallbackQueryHandler(map_settings_callback))
-    # Оставляем только один обработчик для текстовых сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
+    # Добавляем обработчик для пользовательского ввода региона
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_custom_region))
     application.run_polling()
 
 if __name__ == '__main__':
