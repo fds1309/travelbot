@@ -95,10 +95,10 @@ async def add_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
         unique = []
         seen = set()
         for loc in locations:
-            key = (round(loc.latitude, 4), round(loc.longitude, 4))  # округляем для устойчивости
-            if key not in seen:
+            name = loc.raw.get('display_name', loc.address)
+            if name not in seen:
                 unique.append(loc)
-                seen.add(key)
+                seen.add(name)
         locations = unique
         location = locations[0]
         address_parts = [part.strip() for part in location.address.split(',')]
