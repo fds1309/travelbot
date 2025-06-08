@@ -311,6 +311,13 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     bbox = get_bbox_for_scale(scale, continent, filtered_places)
     min_lon, min_lat, max_lon, max_lat = bbox
 
+    # Для авто-режима делаем bbox квадратным и картинку квадратной
+    if scale == 'auto':
+        min_lon, min_lat, max_lon, max_lat = make_bbox_square(min_lon, min_lat, max_lon, max_lat)
+        fig = plt.figure(figsize=(12, 12))  # квадратная картинка
+    else:
+        fig = plt.figure(figsize=(16, 8))   # обычная прямоугольная
+
     # Выбор zoom в зависимости от масштаба
     if scale == 'world':
         zoom = 3
@@ -332,7 +339,6 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         else:
             zoom = 3
 
-    fig = plt.figure(figsize=(16, 8)) #image size
     tiler = cimgt.GoogleTiles()
     ax = plt.axes(projection=tiler.crs)
     ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
@@ -344,7 +350,7 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     plt.tight_layout()
     image_file = TEMP_DIR / f'user_map_{user_id}.png'
-    plt.savefig(image_file, bbox_inches='tight')
+    plt.savefig(image_file, bbox_inches='tight', dpi=200)  # увеличенный dpi!
     plt.close(fig)
     with open(image_file, 'rb') as f:
         await update.message.reply_photo(photo=f)
@@ -535,6 +541,18 @@ async def set_bot_commands(application):
         BotCommand('list', 'List all visited cities')
     ]
     await application.bot.set_my_commands(commands)
+
+def make_bbox_square(min_lon, min_lat, max_lon, max_lat):
+    center_lon = (min_lon + max_lon) / 2
+    center_lat = (min_lat + max_lat) / 2
+    size = max(max_lon - min_lon, max_lat - min_lat)
+    half = size / 2
+    return (
+        center_lon - half,
+        center_lat - half,
+        center_lon + half,
+        center_lat + half
+    )
 
 def main():
     init_db()
