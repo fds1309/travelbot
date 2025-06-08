@@ -29,6 +29,11 @@ logger = logging.getLogger(__name__)
 # Read BOT_TOKEN from file
 with open(os.path.join(os.path.dirname(__file__), 'bot_token.txt'), 'r') as f:
     BOT_TOKEN = f.read().strip()
+
+# Read BOT_NAME from file
+with open(os.path.join(os.path.dirname(__file__), 'bot_name.txt'), 'r', encoding='utf-8') as f:
+    BOT_NAME = f.read().strip()
+
 DB_PATH = 'travel_data.db'
 TEMP_DIR = Path('temp')
 TEMP_DIR.mkdir(exist_ok=True)
@@ -362,6 +367,11 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ax.plot(lon, lat, marker='o', color='red', markersize=8, transform=ccrs.PlateCarree())
 
     plt.tight_layout()
+    # Добавляем подпись с именем бота
+    ax.text(0.99, 0.01, BOT_NAME, fontsize=18, color='gray', alpha=0.7,
+            ha='right', va='bottom', transform=ax.transAxes, fontweight='bold',
+            bbox=dict(facecolor='white', edgecolor='none', alpha=0.5, boxstyle='round,pad=0.2'))
+
     image_file = TEMP_DIR / f'user_map_{user_id}.png'
     plt.savefig(image_file, bbox_inches='tight', dpi=500)  # увеличенный dpi!
     plt.close(fig)
