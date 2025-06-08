@@ -57,8 +57,8 @@ CONTINENT_BBOX = {
     'Europe':        (-10, 35, 60, 70),
     'Russia':        (20, 40, 180, 75),
     'South Asia':    (25, 5, 150, 55),
-    'Africa':        (-20, -45, 55, 45),
-    'North America': (-170, 5, -50, 80),
+    'Africa':        (-20, -40, 55, 40),
+    'North America': (-170, 5, -50, 70),
     'South America': (-90, -60, -30, 15),
     'Australia':     (110, -50, 180, -10),
     'World':         (-180, -55, 180, 75)
