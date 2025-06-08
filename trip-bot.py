@@ -61,7 +61,7 @@ CONTINENT_BBOX = {
     'North America': (-170, 10, -50, 80),
     'South America': (-90, -60, -30, 15),
     'Australia':     (110, -50, 180, -10),
-    'World':         (-220, -55, 140, 75)
+    'World':         (-160, -55, 200, 75)
 }
 
 def init_db():
