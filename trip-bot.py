@@ -12,7 +12,6 @@ from geopy.extra.rate_limiter import RateLimiter
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
 from PIL import Image
 import io
 
@@ -177,8 +176,8 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--window-size=1280,720')
         
-        # Initialize driver
-        service = Service(ChromeDriverManager().install())
+        # Use system ChromeDriver instead of WebDriver Manager
+        service = Service('/usr/local/bin/chromedriver')
         driver = webdriver.Chrome(service=service, options=chrome_options)
         
         try:
