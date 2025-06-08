@@ -58,7 +58,7 @@ CONTINENT_BBOX = {
     'Russia':        (20, 40, 180, 75),
     'South Asia':    (25, 5, 150, 55),
     'Africa':        (-20, -45, 55, 45),
-    'North America': (-170, 00, -50, 60),
+    'North America': (-170, 5, -50, 80),
     'South America': (-90, -60, -30, 15),
     'Australia':     (110, -50, 180, -10),
     'World':         (-180, -55, 180, 75)
@@ -254,7 +254,7 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
         cont = data.strip().title()
         user_temp_options[user_id]['scale'] = 'continent'
         user_temp_options[user_id]['continent'] = cont
-        await query.edit_message_text(f"Generating ({cont}) map...")
+        await query.edit_message_text(f"Generating {cont} map...")
         await send_map_with_options(query, context, user_id)
         MAP_SETTINGS_STATE.pop(user_id, None)
         return
