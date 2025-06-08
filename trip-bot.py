@@ -39,19 +39,15 @@ MAP_SETTINGS_STATE = {}
 
 BOT_VERSION = '0.6'
 
-LANGUAGES = [
-    ('en', 'English'), ('fr', 'Français'), ('ru', 'Русский'), ('de', 'Deutsch')
-]
-
-# Функция для получения центра и bbox для континентов и мира
+# BBOX для мира и континентов (min_lon, min_lat, max_lon, max_lat)
 CONTINENT_BBOX = {
-    'Europe':    {'center': (15, 54),  'zoom': 3, 'bbox': (-10, 35, 40, 70)},
-    'Asia':      {'center': (100, 34), 'zoom': 2, 'bbox': (40, 5, 180, 80)},
-    'Africa':    {'center': (20, 0),   'zoom': 2, 'bbox': (-20, -35, 55, 35)},
-    'North America': {'center': (-105, 54), 'zoom': 2, 'bbox': (-170, 10, -50, 80)},
-    'South America': {'center': (-60, -15), 'zoom': 2, 'bbox': (-90, -60, -30, 15)},
-    'Australia': {'center': (135, -25), 'zoom': 3, 'bbox': (110, -50, 180, -10)},
-    'World':     {'center': (0, 0),    'zoom': 1, 'bbox': (-180, -85, 180, 85)}
+    'Europe':        (-10, 35, 40, 70),
+    'Asia':          (40, 5, 180, 80),
+    'Africa':        (-20, -35, 55, 35),
+    'North America': (-170, 10, -50, 80),
+    'South America': (-90, -60, -30, 15),
+    'Australia':     (110, -50, 180, -10),
+    'World':         (-180, -85, 180, 85)
 }
 
 def init_db():
@@ -82,7 +78,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '/remove [city] - Remove a visited place\n'
         '/mapimg - Generate your travel map (Image)\n'
         '/list - List all visited places\n'
-        '/lang - Change map language\n'
     )
 
 async def add_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -243,7 +238,7 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
             MAP_SETTINGS_STATE.pop(user_id, None)
             return
 
-def get_map_params(scale, continent):
+def get_bbox(scale, continent):
     if scale == 'world':
         return CONTINENT_BBOX['World']
     if scale == 'continent' and continent in CONTINENT_BBOX:
@@ -269,12 +264,9 @@ async def generate_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
     continent = opts.get('continent')
 
     # Определяем параметры карты
-    map_params = get_map_params(scale, continent)
-    if map_params:
-        # Фиксированный bbox для мира/континента
-        m = StaticMap(800, 400, url_template='https://tile.openstreetmap.org/{z}/{x}/{y}.png', 
-                      center=map_params['center'], 
-                      zoom=map_params['zoom'])
+    bbox = get_bbox(scale, continent)
+    if bbox:
+        m = StaticMap(800, 400, url_template='https://tile.openstreetmap.org/{z}/{x}/{y}.png', bounding_box=bbox)
     else:
         # Автоцентрирование по точкам
         m = StaticMap(800, 400, url_template='https://tile.openstreetmap.org/{z}/{x}/{y}.png')
@@ -290,8 +282,6 @@ async def generate_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    lang = get_user_lang(user_id)
-    tile_url = get_tile_url(lang)
     opts = user_temp_options.get(user_id, {'scale': 'auto', 'continent': None})
 
     conn = sqlite3.connect(DB_PATH)
@@ -307,16 +297,12 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     filtered_places = filter_places_by_scale(places, opts)
     scale = opts.get('scale', 'auto')
     continent = opts.get('continent')
+    tile_url = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 
-    # Определяем параметры карты
-    map_params = get_map_params(scale, continent)
-    if map_params:
-        # Фиксированный bbox для мира/континента
-        m = StaticMap(800, 400, url_template=tile_url, 
-                      center=map_params['center'], 
-                      zoom=map_params['zoom'])
+    bbox = get_bbox(scale, continent)
+    if bbox:
+        m = StaticMap(800, 400, url_template=tile_url, bounding_box=bbox)
     else:
-        # Автоцентрирование по точкам
         m = StaticMap(800, 400, url_template=tile_url)
 
     for place_name, lat, lon in filtered_places:
@@ -510,64 +496,9 @@ async def set_bot_commands(application):
         BotCommand('add', 'Add a visited city'),
         BotCommand('remove', 'Remove a visited city'),
         BotCommand('mapimg', 'Generate your travel map (Image)'),
-        BotCommand('list', 'List all visited cities'),
-        BotCommand('lang', 'Change map language')
+        BotCommand('list', 'List all visited cities')
     ]
     await application.bot.set_my_commands(commands)
-
-def get_user_lang(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT lang FROM user_settings WHERE user_id = ?', (user_id,))
-    row = c.fetchone()
-    conn.close()
-    return row[0] if row else 'en'
-
-def set_user_lang(user_id, lang):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('INSERT OR REPLACE INTO user_settings (user_id, lang) VALUES (?, ?)', (user_id, lang))
-    conn.commit()
-    conn.close()
-
-async def lang_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = []
-    row = []
-    for i, (code, name) in enumerate(LANGUAGES, 1):
-        row.append(InlineKeyboardButton(name, callback_data=f"lang_{code}"))
-        if i % 3 == 0:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
-    await update.message.reply_text(
-        "Choose your preferred map language:\n"
-        "Note: Map labels depend on available tile servers. For most languages, labels will be in English or the local language of the place."
-        , reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-async def lang_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    if data.startswith('lang_'):
-        lang = data.split('_', 1)[1]
-        user_id = query.from_user.id
-        set_user_lang(user_id, lang)
-        lang_name = dict(LANGUAGES).get(lang, lang)
-        # Редактируем сообщение с кнопками
-        await query.edit_message_text(f"Language set to: {lang_name}")
-        # Отправляем отдельное сообщение-подтверждение
-        await context.bot.send_message(chat_id=query.message.chat_id, text=f"✅ Language set to: {lang_name}")
-
-def get_tile_url(lang):
-    if lang == 'ru':
-        return 'https://tile.openstreetmap.ru/{z}/{x}/{y}.png'
-    if lang == 'fr':
-        return 'https://tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png'
-    if lang == 'de':
-        return 'https://tile.openstreetmap.de/{z}/{x}/{y}.png'
-    return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 
 def main():
     init_db()
@@ -577,8 +508,6 @@ def main():
     application.add_handler(CommandHandler("mapimg", mapimg_command))
     application.add_handler(CommandHandler("list", list_places))
     application.add_handler(CommandHandler("remove", remove_place))
-    application.add_handler(CommandHandler("lang", lang_command))
-    application.add_handler(CallbackQueryHandler(lang_callback, pattern=r'^lang_'))
     application.add_handler(CallbackQueryHandler(map_settings_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
     application.run_polling()
