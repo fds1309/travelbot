@@ -76,7 +76,7 @@ async def add_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         geocode = get_geocoder()
-        locations = list(geocode(place_name, exactly_one=False, language="en", addressdetails=True, limit=5))
+        locations = list(geocode(place_name, exactly_one=False, language="en", addressdetails=True, limit=10))
         if not locations:
             await update.message.reply_text('Could not find this city. Please try again with a different name.')
             return
@@ -92,13 +92,22 @@ async def add_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             context.user_data['add_city_pending'] = place_name
             return
+        def get_city_key(loc):
+            # Получаем "чистое" название города из addressdetails, если есть
+            address = loc.raw.get('address', {})
+            city = address.get('city') or address.get('town') or address.get('village') or address.get('hamlet') or ''
+            # Округляем координаты для устойчивости
+            lat = round(loc.latitude, 3)
+            lon = round(loc.longitude, 3)
+            return (city.lower(), lat, lon)
+
         unique = []
         seen = set()
         for loc in locations:
-            name = loc.raw.get('display_name', loc.address)
-            if name not in seen:
+            key = get_city_key(loc)
+            if key not in seen:
                 unique.append(loc)
-                seen.add(name)
+                seen.add(key)
         locations = unique
         location = locations[0]
         address_parts = [part.strip() for part in location.address.split(',')]
