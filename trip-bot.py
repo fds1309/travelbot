@@ -412,6 +412,7 @@ def main():
     application.add_handler(CommandHandler("remove", remove_place))
     application.add_handler(CommandHandler("mapimg", mapimg_command))
     application.add_handler(CallbackQueryHandler(map_settings_callback))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
     
     # Start bot
     application.run_polling()
