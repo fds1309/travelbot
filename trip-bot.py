@@ -112,7 +112,9 @@ async def generate_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
         location=[0, 0],
         zoom_start=2,
         prefer_canvas=True,
-        tiles='CartoDB positron'  # Lighter tile set
+        tiles='CartoDB positron',  # Lighter tile set
+        control_scale=False,
+        zoom_control=False  # <-- вот это убирает +/-
     )
     
     for place_name, lat, lon in places:
@@ -154,7 +156,9 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         location=[0, 0],
         zoom_start=2,
         prefer_canvas=True,
-        tiles='CartoDB positron'
+        tiles='CartoDB positron',
+        control_scale=False,
+        zoom_control=False
     )
     
     for place_name, lat, lon in places:
