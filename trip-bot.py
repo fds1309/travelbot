@@ -13,6 +13,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.io.img_tiles as cimgt
+from PIL import Image
 #from selenium import webdriver
 #from selenium.webdriver.chrome.service import Service
 #from selenium.webdriver.chrome.options import Options
@@ -337,8 +338,13 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if scale == 'auto':
         min_lon, min_lat, max_lon, max_lat = make_bbox_square(min_lon, min_lat, max_lon, max_lat)
         fig = plt.figure(figsize=(12, 12))  # квадратная картинка
+        dpi = 100
+    elif scale == 'world':
+        fig = plt.figure(figsize=(12, 6))   # для мира делаем не слишком вытянутую
+        dpi = 100
     else:
         fig = plt.figure(figsize=(16, 8))   # обычная прямоугольная
+        dpi = 100
 
     # Выбор zoom в зависимости от масштаба
     if scale == 'world':
@@ -374,12 +380,20 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Добавляем подпись с именем бота
     ax.text(0.99, 0.01, BOT_NAME, fontsize=18, color='gray', alpha=0.7,
             ha='right', va='bottom', transform=ax.transAxes, fontweight='bold',
-            bbox=dict(facecolor='white', edgecolor='none', alpha=0.2, boxstyle='round,pad=0.2'))
+            bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, boxstyle='round,pad=0.2'))
 
 
     image_file = TEMP_DIR / f'user_map_{user_id}.png'
-    plt.savefig(image_file, bbox_inches='tight', dpi=500)  # увеличенный dpi!
+    plt.savefig(image_file, bbox_inches='tight', dpi=dpi)
     plt.close(fig)
+
+    # Проверяем размер и ресайзим если нужно
+    with Image.open(image_file) as img:
+        max_dim = 1280
+        if img.width > max_dim or img.height > max_dim:
+            img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+            img.save(image_file)
+
     with open(image_file, 'rb') as f:
         await update.message.reply_photo(photo=f, caption=MESSAGE)
     image_file.unlink(missing_ok=True)
