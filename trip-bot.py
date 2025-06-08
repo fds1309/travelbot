@@ -515,7 +515,7 @@ async def set_bot_commands(application):
     ]
     await application.bot.set_my_commands(commands)
 
-async def main():
+def main():
     init_db()
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
@@ -525,9 +525,8 @@ async def main():
     application.add_handler(CommandHandler("remove", remove_place))
     application.add_handler(CallbackQueryHandler(map_settings_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
-    await set_bot_commands(application)
-    await application.run_polling()
+    application.run_async(set_bot_commands(application))
+    application.run_polling()
 
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())    
+    main()    
