@@ -58,7 +58,7 @@ CONTINENT_BBOX = {
     'Russia':        (20, 40, 180, 75),
     'South Asia':    (25, 5, 150, 55),
     'Africa':        (-20, -35, 55, 35),
-    'North America': (-170, 10, -50, 80),
+    'North America': (-170, 40, -50, 90),
     'South America': (-90, -60, -30, 15),
     'Australia':     (110, -50, 180, -10),
     'World':         (-180, -55, 180, 75)
@@ -471,21 +471,11 @@ def make_bbox_square(min_lon, min_lat, max_lon, max_lat):
     )
 
 def is_in_continent(lat, lon, continent):
-    if continent == 'Europe':
-        return 35 <= lat <= 70 and -10 <= lon <= 60
-    if continent == 'Russia':
-        return 40 <= lat <= 75 and 20 <= lon <= 180
-    if continent == 'South Asia':
-        return 5 <= lat <= 55 and 25 <= lon <= 150
-    if continent == 'Africa':
-        return -35 <= lat <= 35 and -20 <= lon <= 55
-    if continent == 'North America':
-        return 10 <= lat <= 80 and -170 <= lon <= -50
-    if continent == 'South America':
-        return -60 <= lat <= 15 and -90 <= lon <= -30
-    if continent == 'Australia':
-        return -50 <= lat <= -10 and 110 <= lon <= 180
-    return False
+    bbox = CONTINENT_BBOX.get(continent)
+    if not bbox:
+        return False
+    min_lon, min_lat, max_lon, max_lat = bbox
+    return min_lat <= lat <= max_lat and min_lon <= lon <= max_lon
 
 async def set_bot_commands(application):
     commands = [
