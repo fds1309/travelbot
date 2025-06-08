@@ -325,15 +325,21 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         marker_coords.append((place_name, lon, lat))
     image = m.render()
 
-    # Добавляем подписи через Pillow, если нужно
+    # --- Подписи через Pillow ---
     if opts.get('labels', True):
         draw = ImageDraw.Draw(image)
-        # Попробуем найти системный шрифт, иначе используем дефолтный
         try:
             font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 14)
         except Exception:
             font = ImageFont.load_default()
-        for (marker, (x, y)), (place_name, lon, lat) in zip(m._marker_positions, marker_coords):
+        # bbox карты
+        bbox = m.calculate_bounding_box()
+        min_lon, min_lat, max_lon, max_lat = bbox
+        width, height = image.size
+        for place_name, lon, lat in marker_coords:
+            # Пропорционально переводим координаты в пиксели
+            x = int((lon - min_lon) / (max_lon - min_lon) * width)
+            y = int((max_lat - lat) / (max_lat - min_lat) * height)
             draw.text((x + 10, y - 10), place_name, font=font, fill='black')
 
     image_file = TEMP_DIR / f'user_map_{user_id}.png'
