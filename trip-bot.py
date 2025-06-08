@@ -227,20 +227,23 @@ async def send_map_with_options(query, context, user_id, is_image):
     class DummyMessage:
         def __init__(self, chat_id):
             self.chat_id = chat_id
-        async def reply_document(self, **kwargs):
+        async def reply_document(self, *args, **kwargs):
             kwargs.setdefault('chat_id', self.chat_id)
-            await context.bot.send_document(**kwargs)
-        async def reply_photo(self, **kwargs):
+            await context.bot.send_document(*args, **kwargs)
+        async def reply_photo(self, *args, **kwargs):
             kwargs.setdefault('chat_id', self.chat_id)
-            await context.bot.send_photo(**kwargs)
-        async def reply_text(self, **kwargs):
+            await context.bot.send_photo(*args, **kwargs)
+        async def reply_text(self, *args, **kwargs):
             kwargs.setdefault('chat_id', self.chat_id)
-            await context.bot.send_message(**kwargs)
-    dummy_update = type('DummyUpdate', (), {'message': DummyMessage(query.message.chat_id), 'effective_user': type('User', (), {'id': user_id})})()
+            await context.bot.send_message(*args, **kwargs)
+    dummy_update = type('DummyUpdate', (), {
+        'message': DummyMessage(query.message.chat_id),
+        'effective_user': type('User', (), {'id': user_id})
+    })()
     if is_image:
-        await mapimg_command(dummy_update, context)
+        await generate_map_image(dummy_update, context)
     else:
-        await map_command(dummy_update, context)
+        await generate_map(dummy_update, context)
 
 async def list_places(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List all visited places for the user."""
