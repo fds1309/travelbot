@@ -40,12 +40,7 @@ MAP_SETTINGS_STATE = {}
 BOT_VERSION = '0.6'
 
 LANGUAGES = [
-    ('en', 'English'), ('zh', '中文'), ('hi', 'हिन्दी'), ('es', 'Español'), ('fr', 'Français'),
-    ('ar', 'العربية'), ('ru', 'Русский'), ('de', 'Deutsch'), ('pt', 'Português'), ('it', 'Italiano'),
-    ('tr', 'Türkçe'), ('pl', 'Polski'), ('uk', 'Українська'), ('nl', 'Nederlands'), ('sv', 'Svenska'),
-    ('fi', 'Suomi'), ('el', 'Ελληνικά'), ('cs', 'Čeština'), ('ro', 'Română'), ('hu', 'Magyar'),
-    ('bg', 'Български'), ('da', 'Dansk'), ('no', 'Norsk'), ('sk', 'Slovenčina'), ('sr', 'Српски'),
-    ('hr', 'Hrvatski'), ('sl', 'Slovenščina')
+    ('en', 'English'), ('fr', 'Français'), ('ru', 'Русский'), ('de', 'Deutsch')
 ]
 
 def init_db():
@@ -562,8 +557,9 @@ async def lang_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if row:
         keyboard.append(row)
     await update.message.reply_text(
-        "Choose your preferred map language:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        "Choose your preferred map language:\n"
+        "Note: Map labels depend on available tile servers. For most languages, labels will be in English or the local language of the place."
+        , reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def lang_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -581,10 +577,12 @@ async def lang_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=query.message.chat_id, text=f"✅ Language set to: {lang_name}")
 
 def get_tile_url(lang):
-    # Можно добавить больше серверов для других языков
     if lang == 'ru':
         return 'https://tile.openstreetmap.ru/{z}/{x}/{y}.png'
-    # Можно добавить другие тайлы для zh, de, fr и т.д. если найдёте подходящие
+    if lang == 'fr':
+        return 'https://tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png'
+    if lang == 'de':
+        return 'https://tile.openstreetmap.de/{z}/{x}/{y}.png'
     return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 
 def main():
