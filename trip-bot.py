@@ -70,6 +70,7 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS visited_places
                  (user_id INTEGER, place_name TEXT, latitude REAL, longitude REAL,
+                  status TEXT DEFAULT 'visited',
                   PRIMARY KEY (user_id, place_name))''')
     c.execute('CREATE INDEX IF NOT EXISTS idx_user_id ON visited_places(user_id)')
     # Таблица для хранения языка пользователя
@@ -89,15 +90,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f'Welcome to Travel Map Bot v{BOT_VERSION}! 🗺️\n'
         'Commands:\n'
         '/add [city] - Add a visited place\n'
-        '/remove [city] - Remove a visited place\n'
+        '/want [city] - Add a place you want to visit\n'
+        '/remove [city] - Remove a place\n'
         '/mapimg - Generate your travel map (Image)\n'
-        '/list - List all visited places\n'
+        '/list - List all your places\n'
     )
 
-async def add_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Add a new place to the user's visited places."""
+async def add_place(update: Update, context: ContextTypes.DEFAULT_TYPE, status='visited'):
+    """Add a new place to the user's places."""
     if not context.args:
-        await update.message.reply_text('City name is preferred. Usage: /add [city name] (or hotel, or any other place name)')
+        status_text = "visited" if status == 'visited' else "want to visit"
+        await update.message.reply_text(f'City name is preferred. Usage: /{update.message.text[1:]} [city name] (or hotel, or any other place name)')
         return
 
     place_name = ' '.join(context.args)
@@ -129,53 +132,45 @@ async def add_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 address = loc.raw.get('display_name', loc.address)
                 options.append(f"{idx+1}. {address}")
             context.user_data['city_candidates'] = unique_locs
+            context.user_data['add_status'] = status
             await update.message.reply_text(
                 'Several cities found with this name. Please reply with the number of the correct one:\n' + '\n'.join(options)
             )
             context.user_data['add_city_pending'] = place_name
             return
-        def get_city_key(loc):
-            # Получаем "чистое" название города из addressdetails, если есть
-            address = loc.raw.get('address', {})
-            city = address.get('city') or address.get('town') or address.get('village') or address.get('hamlet') or ''
-            # Округляем координаты для устойчивости
-            lat = round(loc.latitude, 3)
-            lon = round(loc.longitude, 3)
-            return (city.lower(), lat, lon)
 
-        unique = []
-        seen = set()
-        for loc in locations:
-            key = get_city_key(loc)
-            if key not in seen:
-                unique.append(loc)
-                seen.add(key)
-        locations = unique
         location = locations[0]
         address_parts = [part.strip() for part in location.address.split(',')]
         city = address_parts[0]
         simplified_address = city
+
         # Store in database
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         try:
-            c.execute('INSERT INTO visited_places VALUES (?, ?, ?, ?)',
-                     (user_id, simplified_address, location.latitude, location.longitude))
+            c.execute('INSERT OR REPLACE INTO visited_places VALUES (?, ?, ?, ?, ?)',
+                     (user_id, simplified_address, location.latitude, location.longitude, status))
             conn.commit()
-            await update.message.reply_text(f'Added {simplified_address} to your visited places!')
+            status_text = "visited" if status == 'visited' else "want to visit"
+            await update.message.reply_text(f'Added {simplified_address} to your {status_text} places!')
         except sqlite3.IntegrityError:
-            await update.message.reply_text(f'{simplified_address} is already in your visited places!')
+            await update.message.reply_text(f'{simplified_address} is already in your places!')
         finally:
             conn.close()
     except Exception as e:
         logger.error(f"Error adding place: {str(e)}")
         await update.message.reply_text('Error adding place. Please try again.')
 
+async def want_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Add a place to want to visit list."""
+    await add_place(update, context, status='want_to_visit')
+
 async def handle_city_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if 'add_city_pending' in context.user_data and 'city_candidates' in context.user_data:
         try:
             idx = int(update.message.text.strip()) - 1
             locations = context.user_data['city_candidates']
+            status = context.user_data.get('add_status', 'visited')
             if 0 <= idx < len(locations):
                 location = locations[idx]
                 user_id = update.effective_user.id
@@ -185,16 +180,18 @@ async def handle_city_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 conn = sqlite3.connect(DB_PATH)
                 c = conn.cursor()
                 try:
-                    c.execute('INSERT INTO visited_places VALUES (?, ?, ?, ?)',
-                             (user_id, simplified_address, location.latitude, location.longitude))
+                    c.execute('INSERT OR REPLACE INTO visited_places VALUES (?, ?, ?, ?, ?)',
+                             (user_id, simplified_address, location.latitude, location.longitude, status))
                     conn.commit()
-                    await update.message.reply_text(f'Added {simplified_address} to your visited places!')
+                    status_text = "visited" if status == 'visited' else "want to visit"
+                    await update.message.reply_text(f'Added {simplified_address} to your {status_text} places!')
                 except sqlite3.IntegrityError:
-                    await update.message.reply_text(f'{simplified_address} is already in your visited places!')
+                    await update.message.reply_text(f'{simplified_address} is already in your places!')
                 finally:
                     conn.close()
                 del context.user_data['add_city_pending']
                 del context.user_data['city_candidates']
+                del context.user_data['add_status']
             else:
                 await update.message.reply_text('Invalid number. Please try again.')
         except Exception:
@@ -265,7 +262,7 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT place_name, latitude, longitude FROM visited_places WHERE user_id = ?', (user_id,))
+    c.execute('SELECT place_name, latitude, longitude, status FROM visited_places WHERE user_id = ?', (user_id,))
     places = c.fetchall()
     conn.close()
 
@@ -284,14 +281,13 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         bbox = CONTINENT_BBOX['World']
         filtered_places = places
     else:  # auto
-        lats = [lat for _, lat, _ in places]
-        lons = [lon for _, _, lon in places]
+        lats = [lat for _, lat, _, _ in places]
+        lons = [lon for _, _, lon, _ in places]
         min_lat, max_lat = min(lats), max(lats)
         min_lon, max_lon = min(lons), max(lons)
         dlat = (max_lat - min_lat) * 0.2 or 1
         dlon = (max_lon - min_lon) * 0.2 or 1
         bbox = (min_lon - dlon, min_lat - dlat, max_lon + dlon, max_lat + dlat)
-        # Для auto всегда все точки
         filtered_places = places
 
     min_lon, min_lat, max_lon, max_lat = bbox
@@ -330,11 +326,17 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
     ax.add_image(tiler, zoom)
 
-    # Рисуем маркеры
-    for place_name, lat, lon in filtered_places:
-        ax.plot(lon, lat, marker='o', color='red', markersize=8, transform=ccrs.PlateCarree())
+    # Рисуем маркеры разными цветами в зависимости от статуса
+    for place_name, lat, lon, status in filtered_places:
+        color = 'red' if status == 'visited' else 'blue'
+        ax.plot(lon, lat, marker='o', color=color, markersize=8, transform=ccrs.PlateCarree())
 
     plt.tight_layout()
+    # Добавляем легенду
+    ax.plot([], [], 'ro', label='Visited', transform=ccrs.PlateCarree())
+    ax.plot([], [], 'bo', label='Want to visit', transform=ccrs.PlateCarree())
+    ax.legend(loc='upper right', bbox_to_anchor=(0.99, 0.99))
+
     ax.text(0.99, 0.01, BOT_NAME, fontsize=18, color='gray', alpha=0.7,
             ha='right', va='bottom', transform=ax.transAxes, fontweight='bold',
             bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, boxstyle='round,pad=0.2'))
@@ -370,12 +372,12 @@ async def send_map_with_options(query, context, user_id):
     await generate_map_image(dummy_update, context)
 
 async def list_places(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """List all visited places for the user."""
+    """List all places for the user."""
     user_id = update.effective_user.id
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT place_name, latitude, longitude FROM visited_places WHERE user_id = ? ORDER BY place_name', (user_id,))
+    c.execute('SELECT place_name, latitude, longitude, status FROM visited_places WHERE user_id = ? ORDER BY status, place_name', (user_id,))
     places = c.fetchall()
     conn.close()
 
@@ -385,11 +387,14 @@ async def list_places(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     from geopy.geocoders import Nominatim
     geolocator = Nominatim(user_agent="travel_map_bot", timeout=10)
-    result_lines = []
-    for place_name, lat, lon in places:
+    
+    visited_places = []
+    want_to_visit_places = []
+    
+    for place_name, lat, lon, status in places:
         # Если place_name уже содержит запятую и страну, используем как есть
         if ',' in place_name:
-            result_lines.append(f"\U0001F4CD {place_name}")
+            display_name = place_name
         else:
             # Получаем страну по координатам через reverse
             try:
@@ -398,13 +403,26 @@ async def list_places(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if location and hasattr(location, 'raw'):
                     address = location.raw.get('address', {})
                     country = address.get('country', '')
-                if country:
-                    result_lines.append(f"\U0001F4CD {place_name}, {country}")
-                else:
-                    result_lines.append(f"\U0001F4CD {place_name}")
+                display_name = f"{place_name}, {country}" if country else place_name
             except Exception:
-                result_lines.append(f"\U0001F4CD {place_name}")
-    await update.message.reply_text('Your visited places:\n' + '\n'.join(result_lines))
+                display_name = place_name
+        
+        if status == 'visited':
+            visited_places.append(f"📍 {display_name}")
+        else:
+            want_to_visit_places.append(f"🎯 {display_name}")
+    
+    result = []
+    if visited_places:
+        result.append("Visited places:")
+        result.extend(visited_places)
+    if want_to_visit_places:
+        if result:
+            result.append("")  # Пустая строка как разделитель
+        result.append("Want to visit:")
+        result.extend(want_to_visit_places)
+    
+    await update.message.reply_text('\n'.join(result))
 
 async def remove_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove a place from the user's visited places."""
@@ -481,9 +499,10 @@ async def set_bot_commands(application):
     commands = [
         BotCommand('start', 'Show welcome message and help'),
         BotCommand('add', 'Add a visited city'),
-        BotCommand('remove', 'Remove a visited city'),
+        BotCommand('want', 'Add a city you want to visit'),
+        BotCommand('remove', 'Remove a city'),
         BotCommand('mapimg', 'Generate your travel map (Image)'),
-        BotCommand('list', 'List all visited cities')
+        BotCommand('list', 'List all your cities')
     ]
     await application.bot.set_my_commands(commands)
 
@@ -492,6 +511,7 @@ def main():
     application = Application.builder().token(BOT_TOKEN).post_init(set_bot_commands).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("add", add_place))
+    application.add_handler(CommandHandler("want", want_place))
     application.add_handler(CommandHandler("mapimg", mapimg_command))
     application.add_handler(CommandHandler("list", list_places))
     application.add_handler(CommandHandler("remove", remove_place))
