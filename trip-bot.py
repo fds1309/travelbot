@@ -6,10 +6,13 @@ from typing import Optional, Tuple
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
-from staticmap import StaticMap, CircleMarker
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
-from PIL import Image, ImageDraw, ImageFont
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+import cartopy.io.img_tiles as cimgt
 #from selenium import webdriver
 #from selenium.webdriver.chrome.service import Service
 #from selenium.webdriver.chrome.options import Options
@@ -238,12 +241,19 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
             MAP_SETTINGS_STATE.pop(user_id, None)
             return
 
-def get_bbox(scale, continent):
+def get_bbox_for_scale(scale, continent, places):
     if scale == 'world':
         return CONTINENT_BBOX['World']
     if scale == 'continent' and continent in CONTINENT_BBOX:
         return CONTINENT_BBOX[continent]
-    return None
+    # Авто: по точкам с небольшим отступом
+    lats = [lat for _, lat, _ in places]
+    lons = [lon for _, _, lon in places]
+    min_lat, max_lat = min(lats), max(lats)
+    min_lon, max_lon = min(lons), max(lons)
+    dlat = (max_lat - min_lat) * 0.2 or 1
+    dlon = (max_lon - min_lon) * 0.2 or 1
+    return (min_lon - dlon, min_lat - dlat, max_lon + dlon, max_lat + dlat)
 
 async def generate_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -264,7 +274,7 @@ async def generate_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
     continent = opts.get('continent')
 
     # Определяем параметры карты
-    bbox = get_bbox(scale, continent)
+    bbox = get_bbox_for_scale(scale, continent, filtered_places)
     if bbox:
         m = StaticMap(800, 400, url_template='https://tile.openstreetmap.org/{z}/{x}/{y}.png', bounding_box=bbox)
     else:
@@ -297,19 +307,24 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     filtered_places = filter_places_by_scale(places, opts)
     scale = opts.get('scale', 'auto')
     continent = opts.get('continent')
-    tile_url = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 
-    bbox = get_bbox(scale, continent)
-    if bbox:
-        m = StaticMap(800, 400, url_template=tile_url, bounding_box=bbox)
-    else:
-        m = StaticMap(800, 400, url_template=tile_url)
+    bbox = get_bbox_for_scale(scale, continent, filtered_places)
+    min_lon, min_lat, max_lon, max_lat = bbox
 
+    fig = plt.figure(figsize=(10, 5))
+    tiler = cimgt.Stamen('terrain-background')  # или 'toner', 'terrain', 'watercolor'
+    ax = plt.axes(projection=tiler.crs)
+    ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
+    ax.add_image(tiler, 5)
+
+    # Рисуем маркеры
     for place_name, lat, lon in filtered_places:
-        m.add_marker(CircleMarker((lon, lat), 'red', 12))
-    image = m.render()
+        ax.plot(lon, lat, marker='o', color='red', markersize=8, transform=ccrs.PlateCarree())
+
+    plt.tight_layout()
     image_file = TEMP_DIR / f'user_map_{user_id}.png'
-    image.save(image_file)
+    plt.savefig(image_file, bbox_inches='tight')
+    plt.close(fig)
     with open(image_file, 'rb') as f:
         await update.message.reply_photo(photo=f)
     image_file.unlink(missing_ok=True)
