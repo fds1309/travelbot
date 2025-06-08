@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 from typing import Optional, Tuple
 
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from staticmap import StaticMap, CircleMarker
 from geopy.geocoders import Nominatim
@@ -505,27 +505,29 @@ def is_in_country(lat, lon, country):
         return -44 <= lat <= -10 and 112 <= lon <= 154
     return False
 
+async def set_bot_commands(application):
+    commands = [
+        BotCommand('start', 'Show welcome message and help'),
+        BotCommand('add', 'Add a visited city'),
+        BotCommand('remove', 'Remove a visited city'),
+        BotCommand('mapimg', 'Generate your travel map (Image)'),
+        BotCommand('list', 'List all visited cities'),
+    ]
+    await application.bot.set_my_commands(commands)
 
-def main():
-    """Initialize and start the bot."""
-    # Initialize database
+async def main():
     init_db()
-    
-    # Initialize bot
     application = Application.builder().token(BOT_TOKEN).build()
-
-    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("add", add_place))
-    application.add_handler(CommandHandler("map", map_command))
+    application.add_handler(CommandHandler("mapimg", mapimg_command))
     application.add_handler(CommandHandler("list", list_places))
     application.add_handler(CommandHandler("remove", remove_place))
-    application.add_handler(CommandHandler("mapimg", mapimg_command))
     application.add_handler(CallbackQueryHandler(map_settings_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
-    
-    # Start bot
-    application.run_polling()
+    await set_bot_commands(application)
+    await application.run_polling()
 
 if __name__ == '__main__':
-    main()    
+    import asyncio
+    asyncio.run(main())    
