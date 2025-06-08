@@ -34,6 +34,10 @@ with open(os.path.join(os.path.dirname(__file__), 'bot_token.txt'), 'r') as f:
 with open(os.path.join(os.path.dirname(__file__), 'bot_name.txt'), 'r', encoding='utf-8') as f:
     BOT_NAME = f.read().strip()
 
+# Read MESSAGE from file
+with open(os.path.join(os.path.dirname(__file__), 'message.txt'), 'r', encoding='utf-8') as f:
+    MESSAGE = f.read().strip()
+
 DB_PATH = 'travel_data.db'
 TEMP_DIR = Path('temp')
 TEMP_DIR.mkdir(exist_ok=True)
@@ -370,13 +374,14 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Добавляем подпись с именем бота
     ax.text(0.99, 0.01, BOT_NAME, fontsize=18, color='gray', alpha=0.7,
             ha='right', va='bottom', transform=ax.transAxes, fontweight='bold',
-            bbox=dict(facecolor='white', edgecolor='none', alpha=0.5, boxstyle='round,pad=0.2'))
+            bbox=dict(facecolor='white', edgecolor='none', alpha=0.2, boxstyle='round,pad=0.2'))
+
 
     image_file = TEMP_DIR / f'user_map_{user_id}.png'
     plt.savefig(image_file, bbox_inches='tight', dpi=500)  # увеличенный dpi!
     plt.close(fig)
     with open(image_file, 'rb') as f:
-        await update.message.reply_photo(photo=f)
+        await update.message.reply_photo(photo=f, caption=MESSAGE)
     image_file.unlink(missing_ok=True)
 
 async def send_map_with_options(query, context, user_id, is_image):
