@@ -615,7 +615,7 @@ def make_bbox_square(min_lon, min_lat, max_lon, max_lat):
     half = size / 2
     lat_multiplier = 1
     if abs(max_lat) >60:
-        lat_multiplier = 0.9
+        lat_multiplier = 0.85
     return (
         center_lon - half,
         (center_lat - half) * lat_multiplier,
