@@ -76,7 +76,7 @@ async def add_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         geocode = get_geocoder()
-        locations = list(geocode.geocode(place_name, exactly_one=False, language="en", addressdetails=True, limit=5))
+        locations = list(geocode(place_name, exactly_one=False, language="en", addressdetails=True, limit=5))
         if not locations:
             await update.message.reply_text('Could not find this city. Please try again with a different name.')
             return
