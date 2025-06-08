@@ -311,11 +311,32 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     bbox = get_bbox_for_scale(scale, continent, filtered_places)
     min_lon, min_lat, max_lon, max_lat = bbox
 
+    # Выбор zoom в зависимости от масштаба
+    if scale == 'world':
+        zoom = 3
+    elif scale == 'continent':
+        zoom = 4
+    else:
+        # Для авто-режима: чем меньше bbox, тем больше zoom
+        lat_range = max_lat - min_lat
+        lon_range = max_lon - min_lon
+        max_range = max(lat_range, lon_range)
+        if max_range < 1:
+            zoom = 8
+        elif max_range < 5:
+            zoom = 6
+        elif max_range < 15:
+            zoom = 5
+        elif max_range < 40:
+            zoom = 4
+        else:
+            zoom = 3
+
     fig = plt.figure(figsize=(10, 5))
-    tiler = cimgt.Stamen('terrain-background')  # или 'toner', 'terrain', 'watercolor'
+    tiler = cimgt.Stamen('terrain-background')
     ax = plt.axes(projection=tiler.crs)
     ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
-    ax.add_image(tiler, 5)
+    ax.add_image(tiler, zoom)
 
     # Рисуем маркеры
     for place_name, lat, lon in filtered_places:
