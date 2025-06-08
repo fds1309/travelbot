@@ -48,7 +48,7 @@ user_temp_options = {}
 
 # --- Новый блок: пошаговый выбор настроек через инлайн-кнопки ---
 # Состояния для выбора
-#MAP_SETTINGS_STATE = {}
+MAP_SETTINGS_STATE = {}
 
 BOT_VERSION = '0.7'
 
@@ -213,7 +213,7 @@ async def ask_map_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Choose map scale:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
-    #MAP_SETTINGS_STATE[user_id] = {'step': 'scale'}
+    MAP_SETTINGS_STATE[user_id] = {'step': 'scale'}
 
 async def mapimg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await ask_map_settings(update, context)
@@ -222,7 +222,7 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
-    #state = MAP_SETTINGS_STATE.get(user_id, {})
+    state = MAP_SETTINGS_STATE.get(user_id, {})
     data = query.data
     if state.get('step') == 'scale':
         if data == 'scale_auto':
@@ -230,14 +230,14 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
             user_temp_options[user_id]['continent'] = None
             await query.edit_message_text("Generating map...")
             await send_map_with_options(query, context, user_id)
-            #MAP_SETTINGS_STATE.pop(user_id, None)
+            MAP_SETTINGS_STATE.pop(user_id, None)
             return
         elif data == 'scale_world':
             user_temp_options[user_id]['scale'] = 'world'
             user_temp_options[user_id]['continent'] = None
             await query.edit_message_text("Generating map...")
             await send_map_with_options(query, context, user_id)
-            #MAP_SETTINGS_STATE.pop(user_id, None)
+            MAP_SETTINGS_STATE.pop(user_id, None)
             return
         elif data == 'scale_continent':
             keyboard = [[InlineKeyboardButton(c, callback_data=c)] for c in ["Europe", "Asia", "Africa", "North America", "South America", "Australia"]]
@@ -245,16 +245,15 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 "Choose continent:",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
-            #MAP_SETTINGS_STATE[user_id]['step'] = 'continent'
+            MAP_SETTINGS_STATE[user_id]['step'] = 'continent'
             return
     if state.get('step') == 'continent':
         cont = data.strip().title()
         user_temp_options[user_id]['scale'] = 'continent'
         user_temp_options[user_id]['continent'] = cont
-
         await query.edit_message_text("Generating map...")
         await send_map_with_options(query, context, user_id)
-        #MAP_SETTINGS_STATE.pop(user_id, None)
+        MAP_SETTINGS_STATE.pop(user_id, None)
         return
 
 async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
