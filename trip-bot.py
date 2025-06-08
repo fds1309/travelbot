@@ -92,6 +92,14 @@ async def add_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             context.user_data['add_city_pending'] = place_name
             return
+        unique = []
+        seen = set()
+        for loc in locations:
+            key = (round(loc.latitude, 4), round(loc.longitude, 4))  # округляем для устойчивости
+            if key not in seen:
+                unique.append(loc)
+                seen.add(key)
+        locations = unique
         location = locations[0]
         address_parts = [part.strip() for part in location.address.split(',')]
         city = address_parts[0]
@@ -250,17 +258,14 @@ async def generate_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     for place_name, lat, lon in filtered_places:
-        if opts.get('labels', True):
-            folium.Marker(
-                location=[lat, lon],
-                popup=place_name,
-                icon=folium.Icon(color='red', icon='info-sign')
-            ).add_to(m)
-        else:
-            folium.Marker(
-                location=[lat, lon],
-                icon=folium.Icon(color='red', icon='info-sign')
-            ).add_to(m)
+        folium.Marker(
+            location=[lat, lon],
+            popup=place_name if opts.get('labels', True) else None,
+            tooltip=place_name if opts.get('labels', True) else None,
+            icon=folium.Icon(color='red', icon='info-sign')
+        ).add_to(m)
+
+    m.get_root().html.add_child(folium.Element("""<style>.leaflet-control-attribution {display: none !important;}</style>"""))
 
     map_file = TEMP_DIR / f'user_map_{user_id}.html'
     m.save(str(map_file))
@@ -301,17 +306,12 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
     for place_name, lat, lon in filtered_places:
-        if opts.get('labels', True):
-            folium.Marker(
-                location=[lat, lon],
-                popup=place_name,
-                icon=folium.Icon(color='red', icon='info-sign')
-            ).add_to(m)
-        else:
-            folium.Marker(
-                location=[lat, lon],
-                icon=folium.Icon(color='red', icon='info-sign')
-            ).add_to(m)
+        folium.Marker(
+            location=[lat, lon],
+            popup=place_name if opts.get('labels', True) else None,
+            tooltip=place_name if opts.get('labels', True) else None,
+            icon=folium.Icon(color='red', icon='info-sign')
+        ).add_to(m)
 
     map_file = TEMP_DIR / f'user_map_{user_id}.html'
     m.save(str(map_file))
