@@ -54,13 +54,14 @@ BOT_VERSION = '0.7'
 
 # BBOX для мира и континентов (min_lon, min_lat, max_lon, max_lat)
 CONTINENT_BBOX = {
-    'Europe':        (-10, 35, 40, 70),
-    'Asia':          (40, 5, 180, 80),
+    'Europe':        (-10, 35, 60, 70),
+    'Russia':        (20, 40, 180, 75),
+    'South Asia':    (40, 5, 180, 55),
     'Africa':        (-20, -35, 55, 35),
     'North America': (-170, 10, -50, 80),
     'South America': (-90, -60, -30, 15),
     'Australia':     (110, -50, 180, -10),
-    'World':         (-200, -55, 160, 75)
+    'World':         (-220, -55, 140, 75)
 }
 
 def init_db():
@@ -240,10 +241,12 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
             MAP_SETTINGS_STATE.pop(user_id, None)
             return
         elif data == 'scale_continent':
-            keyboard = [[InlineKeyboardButton(c, callback_data=c)] for c in ["Europe", "Asia", "Africa", "North America", "South America", "Australia"]]
+            continent_list = ["Europe", "Russia", "South Asia", "Africa", "North America", "South America", "Australia"]
             await query.edit_message_text(
                 "Choose continent:",
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton(c, callback_data=c)] for c in continent_list]
+                )
             )
             MAP_SETTINGS_STATE[user_id]['step'] = 'continent'
             return
@@ -469,9 +472,11 @@ def make_bbox_square(min_lon, min_lat, max_lon, max_lat):
 
 def is_in_continent(lat, lon, continent):
     if continent == 'Europe':
-        return 35 <= lat <= 70 and -10 <= lon <= 40
-    if continent == 'Asia':
-        return 5 <= lat <= 80 and 40 <= lon <= 180
+        return 35 <= lat <= 70 and -10 <= lon <= 60
+    if continent == 'Russia':
+        return 40 <= lat <= 75 and 20 <= lon <= 180
+    if continent == 'South Asia':
+        return 5 <= lat <= 55 and 40 <= lon <= 180
     if continent == 'Africa':
         return -35 <= lat <= 35 and -20 <= lon <= 55
     if continent == 'North America':
