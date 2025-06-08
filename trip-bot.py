@@ -86,7 +86,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Add a new place to the user's visited places."""
     if not context.args:
-        await update.message.reply_text('Please provide a city name. Usage: /add [city name] (in English, only the city!)')
+        await update.message.reply_text('Please provide a city name. Usage: /add [city name] (only the city name!)')
         return
 
     place_name = ' '.join(context.args)
@@ -398,7 +398,7 @@ async def list_places(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT place_name FROM visited_places WHERE user_id = ? ORDER BY place_name', (user_id,))
+    c.execute('SELECT place_name, latitude, longitude FROM visited_places WHERE user_id = ? ORDER BY place_name', (user_id,))
     places = c.fetchall()
     conn.close()
 
@@ -406,8 +406,27 @@ async def list_places(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text('You haven\'t added any places yet!')
         return
 
-    place_list = '\n'.join([f"📍 {place[0]}" for place in places])
-    await update.message.reply_text(f'Your visited places:\n{place_list}')
+    geocode = get_geocoder()
+    result_lines = []
+    for place_name, lat, lon in places:
+        # Если place_name уже содержит запятую и страну, используем как есть
+        if ',' in place_name:
+            result_lines.append(f"\U0001F4CD {place_name}")
+        else:
+            # Получаем страну по координатам
+            try:
+                location = geocode((lat, lon), exactly_one=True, language="en", addressdetails=True)
+                country = ''
+                if location and hasattr(location, 'raw'):
+                    address = location.raw.get('address', {})
+                    country = address.get('country', '')
+                if country:
+                    result_lines.append(f"\U0001F4CD {place_name}, {country}")
+                else:
+                    result_lines.append(f"\U0001F4CD {place_name}")
+            except Exception:
+                result_lines.append(f"\U0001F4CD {place_name}")
+    await update.message.reply_text('Your visited places:\n' + '\n'.join(result_lines))
 
 async def remove_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove a place from the user's visited places."""
