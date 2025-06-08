@@ -87,7 +87,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f'Welcome to Travel Map Bot v{BOT_VERSION}! 🗺️\n'
         'Commands:\n'
-        '/add [city] - Add a visited place (please send only the city name in English, without country or other objects)\n'
+        '/add [city] - Add a visited place\n'
         '/remove [city] - Remove a visited place\n'
         '/mapimg - Generate your travel map (Image)\n'
         '/list - List all visited places\n'
@@ -96,7 +96,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Add a new place to the user's visited places."""
     if not context.args:
-        await update.message.reply_text('Please provide a city name. Usage: /add [city name] (only the city name!)')
+        await update.message.reply_text('City name is preferred. Usage: /add [city name] (or hotel, or any other place name)')
         return
 
     place_name = ' '.join(context.args)
@@ -199,28 +199,22 @@ async def handle_city_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except Exception:
             await update.message.reply_text('Please reply with the number of the correct city.')
 
-async def ask_map_settings(update: Update, context: ContextTypes.DEFAULT_TYPE, is_image=False):
+async def ask_map_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    # Сбросить временные настройки
     user_temp_options[user_id] = {'scale': 'auto', 'continent': None}
-    # Первый шаг — подписи
     keyboard = [
-        [InlineKeyboardButton("Auto", callback_data=f"scale_auto|{is_image}")],
-        [InlineKeyboardButton("World", callback_data=f"scale_world|{is_image}")],
-        [InlineKeyboardButton("Continent", callback_data=f"scale_continent|{is_image}")]
+        [InlineKeyboardButton("Auto", callback_data="scale_auto")],
+        [InlineKeyboardButton("World", callback_data="scale_world")],
+        [InlineKeyboardButton("Continent", callback_data="scale_continent")]
     ]
     await update.message.reply_text(
         "Choose map scale:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
-    MAP_SETTINGS_STATE[user_id] = {'step': 'scale', 'is_image': is_image}
-
-#async def map_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#    await ask_map_settings(update, context, is_image=False)
-
+    MAP_SETTINGS_STATE[user_id] = {'step': 'scale'}
 
 async def mapimg_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await ask_map_settings(update, context, is_image=True)
+    await ask_map_settings(update, context)
 
 async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -228,90 +222,37 @@ async def map_settings_callback(update: Update, context: ContextTypes.DEFAULT_TY
     user_id = query.from_user.id
     state = MAP_SETTINGS_STATE.get(user_id, {})
     data = query.data
-    # Обработка выбора подписи
     if state.get('step') == 'scale':
-        if data.startswith('scale_auto'):
+        if data == 'scale_auto':
             user_temp_options[user_id]['scale'] = 'auto'
             user_temp_options[user_id]['continent'] = None
             await query.edit_message_text("Generating map...")
-            await send_map_with_options(query, context, user_id, state.get('is_image', False))
+            await generate_map_image(query, context)
             MAP_SETTINGS_STATE.pop(user_id, None)
             return
-        elif data.startswith('scale_world'):
+        elif data == 'scale_world':
             user_temp_options[user_id]['scale'] = 'world'
             user_temp_options[user_id]['continent'] = None
             await query.edit_message_text("Generating map...")
-            await send_map_with_options(query, context, user_id, state.get('is_image', False))
+            await generate_map_image(query, context)
             MAP_SETTINGS_STATE.pop(user_id, None)
             return
-        elif data.startswith('scale_continent'):
-            user_temp_options[user_id]['scale'] = 'continent'
-            # Следующий шаг — выбор континента
-            keyboard = [[InlineKeyboardButton(c, callback_data=f"continent_{c}|{state.get('is_image', False)}")] for c in ["Europe", "Asia", "Africa", "North America", "South America", "Australia"]]
+        elif data == 'scale_continent':
+            keyboard = [[InlineKeyboardButton(c, callback_data=f"continent_{c}")] for c in ["Europe", "Asia", "Africa", "North America", "South America", "Australia"]]
             await query.edit_message_text(
                 "Choose continent:",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             MAP_SETTINGS_STATE[user_id]['step'] = 'continent'
             return
-    # Обработка выбора континента
     if state.get('step') == 'continent':
         if data.startswith('continent_'):
-            cont = data.split('_', 1)[1].split('|')[0]
+            cont = data.split('_', 1)[1]
             user_temp_options[user_id]['continent'] = cont
             await query.edit_message_text("Generating map...")
-            await send_map_with_options(query, context, user_id, state.get('is_image', False))
+            await generate_map_image(query, context)
             MAP_SETTINGS_STATE.pop(user_id, None)
             return
-
-def get_bbox_for_scale(scale, continent, places):
-    if scale == 'world':
-        return CONTINENT_BBOX['World']
-    if scale == 'continent' and continent in CONTINENT_BBOX:
-        return CONTINENT_BBOX[continent]
-    # Авто: по точкам с небольшим отступом
-    lats = [lat for _, lat, _ in places]
-    lons = [lon for _, _, lon in places]
-    min_lat, max_lat = min(lats), max(lats)
-    min_lon, max_lon = min(lons), max(lons)
-    dlat = (max_lat - min_lat) * 0.2 or 1
-    dlon = (max_lon - min_lon) * 0.2 or 1
-    return (min_lon - dlon, min_lat - dlat, max_lon + dlon, max_lat + dlat)
-
-async def generate_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    opts = user_temp_options.get(user_id, {'scale': 'auto', 'continent': None})
-
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT place_name, latitude, longitude FROM visited_places WHERE user_id = ?', (user_id,))
-    places = c.fetchall()
-    conn.close()
-
-    if not places:
-        await update.message.reply_text('You haven\'t added any places yet! Use /add [city] to start.')
-        return
-
-    filtered_places = filter_places_by_scale(places, opts)
-    scale = opts.get('scale', 'auto')
-    continent = opts.get('continent')
-
-    # Определяем параметры карты
-    bbox = get_bbox_for_scale(scale, continent, filtered_places)
-    if bbox:
-        m = StaticMap(800, 400, url_template='https://tile.openstreetmap.org/{z}/{x}/{y}.png', bounding_box=bbox)
-    else:
-        # Автоцентрирование по точкам
-        m = StaticMap(800, 400, url_template='https://tile.openstreetmap.org/{z}/{x}/{y}.png')
-
-    for place_name, lat, lon in filtered_places:
-        m.add_marker(CircleMarker((lon, lat), 'red', 12))
-    image = m.render()
-    image_file = TEMP_DIR / f'user_map_{user_id}.png'
-    image.save(image_file)
-    with open(image_file, 'rb') as f:
-        await update.message.reply_photo(photo=f)
-    image_file.unlink(missing_ok=True)
 
 async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -327,24 +268,20 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text('You haven\'t added any places yet! Use /add [city] to start.')
         return
 
-    filtered_places = filter_places_by_scale(places, opts)
     scale = opts.get('scale', 'auto')
     continent = opts.get('continent')
 
-    bbox = get_bbox_for_scale(scale, continent, filtered_places)
+    bbox = get_bbox_for_scale(scale, continent, places)
     min_lon, min_lat, max_lon, max_lat = bbox
 
     # Для авто-режима делаем bbox квадратным и картинку квадратной
     if scale == 'auto':
         min_lon, min_lat, max_lon, max_lat = make_bbox_square(min_lon, min_lat, max_lon, max_lat)
         fig = plt.figure(figsize=(12, 12))  # квадратная картинка
-        dpi = 100
-    elif scale == 'world':
-        fig = plt.figure(figsize=(12, 6))   # для мира делаем не слишком вытянутую
-        dpi = 100
+        dpi = 200
     else:
-        fig = plt.figure(figsize=(16, 8))   # обычная прямоугольная
-        dpi = 100
+        fig = plt.figure(figsize=(16, 8))   # для мира делаем не слишком вытянутую
+        dpi = 300
 
     # Выбор zoom в зависимости от масштаба
     if scale == 'world':
@@ -373,7 +310,7 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     ax.add_image(tiler, zoom)
 
     # Рисуем маркеры
-    for place_name, lat, lon in filtered_places:
+    for place_name, lat, lon in places:
         ax.plot(lon, lat, marker='o', color='red', markersize=8, transform=ccrs.PlateCarree())
 
     plt.tight_layout()
@@ -381,7 +318,6 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
     ax.text(0.99, 0.01, BOT_NAME, fontsize=18, color='gray', alpha=0.7,
             ha='right', va='bottom', transform=ax.transAxes, fontweight='bold',
             bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, boxstyle='round,pad=0.2'))
-
 
     image_file = TEMP_DIR / f'user_map_{user_id}.png'
     plt.savefig(image_file, bbox_inches='tight', dpi=dpi)
@@ -398,14 +334,10 @@ async def generate_map_image(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_photo(photo=f, caption=MESSAGE)
     image_file.unlink(missing_ok=True)
 
-async def send_map_with_options(query, context, user_id, is_image):
-    # Получаем update.message для передачи в старые функции
+async def send_map_with_options(query, context, user_id):
     class DummyMessage:
         def __init__(self, chat_id):
             self.chat_id = chat_id
-        async def reply_document(self, *args, **kwargs):
-            kwargs.setdefault('chat_id', self.chat_id)
-            await context.bot.send_document(*args, **kwargs)
         async def reply_photo(self, *args, **kwargs):
             kwargs.setdefault('chat_id', self.chat_id)
             await context.bot.send_photo(*args, **kwargs)
@@ -416,10 +348,7 @@ async def send_map_with_options(query, context, user_id, is_image):
         'message': DummyMessage(query.message.chat_id),
         'effective_user': type('User', (), {'id': user_id})
     })()
-    if is_image:
-        await generate_map_image(dummy_update, context)
-    else:
-        await generate_map(dummy_update, context)
+    await generate_map_image(dummy_update, context)
 
 async def list_places(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List all visited places for the user."""
@@ -496,113 +425,19 @@ async def remove_place(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(f'Removed {places[0][0]} from your visited places!')
 
-# --- Вспомогательные функции ---
-def filter_places_by_scale(places, opts):
-    # places: [(name, lat, lon), ...]
-    scale = opts.get('scale', 'auto')
-    continent = opts.get('continent')
-    country = opts.get('country')
-    if scale == 'world' or scale == 'auto':
-        return places
-    if scale == 'continent' and continent:
-        # Фильтрация по континенту (простая проверка по координатам)
-        # Для production лучше использовать geo-библиотеку
-        return [p for p in places if is_in_continent(p[1], p[2], continent)]
-    if scale == 'country' and country:
-        return [p for p in places if is_in_country(p[1], p[2], country)]
-    return places
-
-def get_map_center_zoom(places, opts):
-    # places: [(name, lat, lon), ...]
-    if not places:
-        return [0, 0], 2
-    scale = opts.get('scale', 'auto')
+def get_bbox_for_scale(scale, continent, places):
     if scale == 'world':
-        return [0, 0], 2
-    if scale == 'continent':
-        # Центры континентов (примерно)
-        centers = {
-            'Europe': ([54, 15], 4),
-            'Asia': ([34, 100], 3),
-            'Africa': ([0, 20], 3),
-            'North America': ([54, -105], 3),
-            'South America': ([-15, -60], 3),
-            'Australia': ([-25, 135], 4),
-        }
-        c = opts.get('continent')
-        if c in centers:
-            return centers[c]
-        return [0, 0], 2
-    if scale == 'country':
-        # Центры некоторых стран (примерно)
-        centers = {
-            'Russia': ([60, 90], 3),
-            'China': ([35, 105], 4),
-            'USA': ([39, -98], 4),
-            'Australia': ([-25, 135], 4),
-        }
-        c = opts.get('country')
-        if c in centers:
-            return centers[c]
-        # Если страна не в списке — автоцентр по точкам
-    # Автоцентр и зум по всем точкам
+        return CONTINENT_BBOX['World']
+    if scale == 'continent' and continent in CONTINENT_BBOX:
+        return CONTINENT_BBOX[continent]
+    # Авто: по точкам с небольшим отступом
     lats = [lat for _, lat, _ in places]
     lons = [lon for _, _, lon in places]
-    center = [sum(lats)/len(lats), sum(lons)/len(lons)]
-    # Примерная оценка зума: чем больше разброс, тем меньше зум
-    lat_range = max(lats) - min(lats)
-    lon_range = max(lons) - min(lons)
-    max_range = max(lat_range, lon_range)
-    if max_range < 1:
-        zoom = 10
-    elif max_range < 5:
-        zoom = 7
-    elif max_range < 15:
-        zoom = 5
-    elif max_range < 40:
-        zoom = 3
-    else:
-        zoom = 2
-    return center, zoom
-
-def is_in_continent(lat, lon, continent):
-    # Примитивная фильтрация по координатам (для production лучше geo-библиотеку)
-    if continent == 'Europe':
-        return 35 <= lat <= 70 and -10 <= lon <= 40
-    if continent == 'Asia':
-        return 5 <= lat <= 80 and 40 <= lon <= 180
-    if continent == 'Africa':
-        return -35 <= lat <= 35 and -20 <= lon <= 55
-    if continent == 'North America':
-        return 10 <= lat <= 80 and -170 <= lon <= -50
-    if continent == 'South America':
-        return -60 <= lat <= 15 and -90 <= lon <= -30
-    if continent == 'Australia':
-        return -50 <= lat <= -10 and 110 <= lon <= 180
-    return False
-
-def is_in_country(lat, lon, country):
-    # Для production лучше использовать geo-библиотеку или API
-    # Здесь только для особых стран
-    if country == 'Russia':
-        return 40 <= lat <= 75 and 20 <= lon <= 180
-    if country == 'China':
-        return 18 <= lat <= 54 and 73 <= lon <= 135
-    if country == 'USA':
-        return 24 <= lat <= 49 and -125 <= lon <= -66
-    if country == 'Australia':
-        return -44 <= lat <= -10 and 112 <= lon <= 154
-    return False
-
-async def set_bot_commands(application):
-    commands = [
-        BotCommand('start', 'Show welcome message and help'),
-        BotCommand('add', 'Add a visited city'),
-        BotCommand('remove', 'Remove a visited city'),
-        BotCommand('mapimg', 'Generate your travel map (Image)'),
-        BotCommand('list', 'List all visited cities')
-    ]
-    await application.bot.set_my_commands(commands)
+    min_lat, max_lat = min(lats), max(lats)
+    min_lon, max_lon = min(lons), max(lons)
+    dlat = (max_lat - min_lat) * 0.2 or 1
+    dlon = (max_lon - min_lon) * 0.2 or 1
+    return (min_lon - dlon, min_lat - dlat, max_lon + dlon, max_lat + dlat)
 
 def make_bbox_square(min_lon, min_lat, max_lon, max_lat):
     center_lon = (min_lon + max_lon) / 2
@@ -615,6 +450,16 @@ def make_bbox_square(min_lon, min_lat, max_lon, max_lat):
         center_lon + half,
         center_lat + half
     )
+
+async def set_bot_commands(application):
+    commands = [
+        BotCommand('start', 'Show welcome message and help'),
+        BotCommand('add', 'Add a visited city'),
+        BotCommand('remove', 'Remove a visited city'),
+        BotCommand('mapimg', 'Generate your travel map (Image)'),
+        BotCommand('list', 'List all visited cities')
+    ]
+    await application.bot.set_my_commands(commands)
 
 def main():
     init_db()
