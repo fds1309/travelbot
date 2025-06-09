@@ -2,6 +2,7 @@ python-telegram-bot==20.7
 geopy==2.4.1
 matplotlib
 cartopy
+OWSLib>=0.28
 
 #python-telegram-bot==20.7
 #folium==0.15.1

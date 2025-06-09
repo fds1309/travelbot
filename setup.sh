@@ -16,6 +16,12 @@ pip install -r requirements.txt
 mkdir -p ~/travelbot
 cp trip-bot.py ~/travelbot/
 cp requirements.txt ~/travelbot/
+# Create empty files
+touch ~/travelbot/bot_token.txt
+touch ~/travelbot/bot_name.txt
+touch ~/travelbot/message.txt
+
+
 
 echo "Setup completed! To start the bot:"
 echo "1. cd ~/travelbot"
